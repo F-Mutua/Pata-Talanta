@@ -211,8 +211,8 @@ export default function PlayerProfilePage() {
               <div>
                 <h2 className="text-xl font-bold">Visibility to scouts</h2>
                 <p className="mt-1 text-sm text-[#AEB5C0]">
-                  Only scouts verified by BCF can see visible profiles. You can turn this
-                  off at any time.
+                  Only scouts registered on Pata Talanta can see visible profiles. You can turn
+                  this off at any time.
                 </p>
               </div>
               {views !== null && discoverable && (
@@ -230,7 +230,7 @@ export default function PlayerProfilePage() {
                 className="mt-1 h-5 w-5 accent-[#F47721]"
               />
               <span>
-                <span className="block font-semibold">Let verified scouts find me</span>
+                <span className="block font-semibold">Let scouts find me</span>
                 <span className="block text-sm text-[#AEB5C0]">
                   Scouts can see your profile, club history, matches and statistics. Your
                   contact details stay hidden until you accept a scout&apos;s request.

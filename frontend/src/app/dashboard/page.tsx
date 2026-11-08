@@ -105,17 +105,7 @@ async function DashboardContent() {
     .eq("id", user.id)
     .maybeSingle();
 
-  // Scouts have an application row (approved or not); the scout area handles it.
-  const { count: scoutApps } = await supabase
-    .from("scout_applications")
-    .select("id", { count: "exact", head: true })
-    .eq("applicant_id", user.id);
-  if (
-    profile?.role === "scout" ||
-    user.user_metadata?.role === "scout" ||
-    (scoutApps ?? 0) > 0
-  )
-    redirect("/scout");
+  if (profile?.role === "scout" || user.user_metadata?.role === "scout") redirect("/scout");
 
   const [{ count: pendingRequests }, { count: views }] = await Promise.all([
     supabase
@@ -161,7 +151,7 @@ async function DashboardContent() {
             !!views && (
               <p className="mt-6 text-sm text-[#AEB5C0]">
                 Your profile has been viewed <strong className="text-white">{views}</strong> time
-                {views === 1 ? "" : "s"} by verified scouts.
+                {views === 1 ? "" : "s"} by scouts.
               </p>
             )
           )}

@@ -19,17 +19,6 @@ export type PlayerContact = {
   updated_at: string | null;
 };
 
-export type ScoutApplicationStatus = "pending" | "approved" | "rejected" | string;
-
-export type ScoutApplication = {
-  id: string;
-  applicant_id: string;
-  status: ScoutApplicationStatus;
-  verification_authority: string | null;
-  notes: string | null;
-  created_at: string;
-};
-
 export function ageFrom(dob: string | null | undefined): number | null {
   if (!dob) return null;
   const d = new Date(`${dob.slice(0, 10)}T00:00:00`);
