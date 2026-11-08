@@ -6,6 +6,7 @@ import { createClient } from "@/utils/supabase/client";
 import { useScout } from "@/lib/useScout";
 import { ui, errorMessage } from "@/lib/ui";
 import { ageFrom, type PlayerProfile } from "@/lib/types";
+import { talentScore, TALENT_SCORE_EXPLAINER } from "@/lib/stats";
 
 type PlayerCard = PlayerProfile & {
   age: number | null;
@@ -13,10 +14,13 @@ type PlayerCard = PlayerProfile & {
   minutes: number;
   goals: number;
   assists: number;
+  defensive: number;
+  videoMatches: number;
   videos: number;
+  score: number;
 };
 
-type SortKey = "contributions" | "matches" | "minutes" | "name";
+type SortKey = "score" | "contributions" | "matches" | "minutes" | "name";
 
 export default function ScoutDashboard() {
   const scoutId = useScout();
@@ -32,7 +36,7 @@ export default function ScoutDashboard() {
   const [position, setPosition] = useState("");
   const [minMatches, setMinMatches] = useState(0);
   const [videoOnly, setVideoOnly] = useState(false);
-  const [sort, setSort] = useState<SortKey>("contributions");
+  const [sort, setSort] = useState<SortKey>("score");
 
   useEffect(() => {
     if (!scoutId) return;
@@ -80,15 +84,16 @@ export default function ScoutDashboard() {
         const { data: stats, error: sErr } = appIds.length
           ? await supabase
               .from("performance_stats")
-              .select("match_player_id, goals, assists")
+              .select("match_player_id, goals, assists, tackles, interceptions, data_source")
               .in("match_player_id", appIds)
           : { data: [], error: null };
         if (sErr) throw sErr;
 
         const appOwner = new Map(appearances.map((a) => [a.id, a.player_id]));
-        const agg = new Map<string, Omit<PlayerCard, keyof PlayerProfile | "age">>();
+        const agg = new Map<string, Omit<PlayerCard, keyof PlayerProfile | "age" | "score">>();
         const get = (id: string) => {
-          if (!agg.has(id)) agg.set(id, { matches: 0, minutes: 0, goals: 0, assists: 0, videos: 0 });
+          if (!agg.has(id))
+            agg.set(id, { matches: 0, minutes: 0, goals: 0, assists: 0, defensive: 0, videoMatches: 0, videos: 0 });
           return agg.get(id)!;
         };
         for (const a of appearances) {
@@ -102,11 +107,18 @@ export default function ScoutDashboard() {
           const g = get(owner);
           g.goals += s.goals || 0;
           g.assists += s.assists || 0;
+          g.defensive += (s.tackles || 0) + (s.interceptions || 0);
+          if (String(s.data_source || "").includes("video")) g.videoMatches += 1;
         }
         // match_videos may not exist yet; treat that as "no videos".
         for (const v of vids.error ? [] : vids.data || []) get(v.player_id).videos += 1;
 
-        setPlayers((profiles || []).map((p) => ({ ...p, ...get(p.id), age: ageFrom(p.date_of_birth) })));
+        setPlayers(
+          (profiles || []).map((p) => {
+            const a = get(p.id);
+            return { ...p, ...a, age: ageFrom(p.date_of_birth), score: talentScore(a) };
+          })
+        );
         setPending(reqs.count || 0);
         // Most recent view per player, newest first.
         const seen = new Set<string>();
@@ -151,9 +163,26 @@ export default function ScoutDashboard() {
         if (sort === "name") return (a.display_name || "").localeCompare(b.display_name || "");
         if (sort === "matches") return b.matches - a.matches;
         if (sort === "minutes") return b.minutes - a.minutes;
-        return b.goals + b.assists - (a.goals + a.assists);
+        if (sort === "contributions") return b.goals + b.assists - (a.goals + a.assists);
+        return b.score - a.score;
       });
   }, [players, query, county, position, ageBand, minMatches, videoOnly, sort]);
+
+  // Re-ranks whenever the filters change.
+  const topPicks = useMemo(
+    () => [...filtered].filter((p) => p.matches > 0).sort((a, b) => b.score - a.score).slice(0, 3),
+    [filtered]
+  );
+
+  const totals = useMemo(
+    () => [
+      { label: "Players visible", value: players.length },
+      { label: "Matches logged", value: players.reduce((t, p) => t + p.matches, 0) },
+      { label: "Matches analysed from video", value: players.reduce((t, p) => t + p.videoMatches, 0) },
+      { label: "Counties", value: new Set(players.map((p) => p.county?.trim()).filter(Boolean)).size },
+    ],
+    [players]
+  );
 
   const recentPlayers = recent
     .map((id) => players.find((p) => p.id === id))
@@ -189,7 +218,15 @@ export default function ScoutDashboard() {
           </Link>
         </div>
 
-        {/* Filters: one row above the results */}
+        <section className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4" aria-label="Totals">
+          {totals.map((t) => (
+            <div key={t.label} className="rounded-xl border border-[#353941] bg-[#22252B] p-4 sm:p-5">
+              <p className="text-xs text-[#AEB5C0] sm:text-sm">{t.label}</p>
+              <p className="mt-1 text-2xl font-black">{loading ? "–" : t.value}</p>
+            </div>
+          ))}
+        </section>
+
         {recentPlayers.length > 0 && (
           <section className="mt-10">
             <h2 className="text-sm font-bold uppercase tracking-wide text-[#AEB5C0]">Recently viewed</h2>
@@ -208,6 +245,7 @@ export default function ScoutDashboard() {
           </section>
         )}
 
+        {/* Filters: one row above the results */}
         <section className="mt-8 grid gap-3 rounded-xl border border-[#353941] bg-[#1D2025] p-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr]">
           <input
             aria-label="Search by name"
@@ -247,6 +285,7 @@ export default function ScoutDashboard() {
             <option value={10}>10+ matches</option>
           </select>
           <select aria-label="Sort by" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className={ui.input}>
+            <option value="score">Sort: talent score</option>
             <option value="contributions">Sort: goal contributions</option>
             <option value="matches">Sort: matches played</option>
             <option value="minutes">Sort: minutes played</option>
@@ -264,6 +303,41 @@ export default function ScoutDashboard() {
         </section>
 
         {error && <p className={`${ui.error} mt-6`}>{error}</p>}
+
+        {!loading && topPicks.length > 0 && (
+          <section className="mt-8 rounded-xl border border-[#F47721]/40 bg-[#F47721]/5 p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-lg font-bold">Top players to watch</h2>
+              <p className="text-xs text-[#AEB5C0]">Ranked within your current filters</p>
+            </div>
+            <ol className="mt-4 grid gap-3 md:grid-cols-3">
+              {topPicks.map((p, i) => (
+                <li key={p.id}>
+                  <Link
+                    href={`/scout/players/${p.id}`}
+                    className="flex items-center gap-4 rounded-lg border border-[#353941] bg-[#22252B] p-4 transition hover:border-[#F47721]"
+                  >
+                    <span className="text-2xl font-black text-[#F47721]">{i + 1}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-bold">{p.display_name || "Unnamed player"}</span>
+                      <span className="block truncate text-xs text-[#AEB5C0]">
+                        {[p.position, p.county].filter(Boolean).join(" · ") || "Details not provided"}
+                      </span>
+                    </span>
+                    <span className="text-right">
+                      <span className="block text-xl font-black">{p.score}</span>
+                      <span className="block text-[10px] uppercase tracking-wide text-[#AEB5C0]">score</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ol>
+            <details className="mt-3 text-xs text-[#AEB5C0]">
+              <summary className="cursor-pointer hover:text-white">How the score works</summary>
+              <p className="mt-2 leading-5">{TALENT_SCORE_EXPLAINER}</p>
+            </details>
+          </section>
+        )}
 
         <p className="mt-6 text-sm text-[#AEB5C0]" aria-live="polite">
           {loading ? "Loading players…" : `${filtered.length} of ${players.length} players`}
@@ -298,11 +372,17 @@ export default function ScoutDashboard() {
                       </p>
                     </div>
                   </div>
-                  {p.videos > 0 && (
-                    <span className="shrink-0 rounded-full bg-[#F47721]/15 px-2 py-1 text-[10px] font-bold uppercase text-[#F47721]">
-                      Video
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="text-right" title={TALENT_SCORE_EXPLAINER}>
+                      <span className="block text-lg font-black leading-none">{p.score}</span>
+                      <span className="text-[10px] uppercase tracking-wide text-[#AEB5C0]">score</span>
                     </span>
-                  )}
+                    {p.videos > 0 && (
+                      <span className="rounded-full bg-[#F47721]/15 px-2 py-0.5 text-[10px] font-bold uppercase text-[#F47721]">
+                        Video
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <dl className="mt-5 grid grid-cols-4 gap-2 border-t border-[#353941] pt-4 text-center">

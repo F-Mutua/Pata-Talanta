@@ -52,3 +52,27 @@ export function combineHeatmaps(grids: number[][][]): number[][] | null {
   }
   return out;
 }
+
+/**
+ * Prototype "talent score", 0–100. Deliberately simple so a scout can see why
+ * a player ranks where they do:
+ *   contributions = 4 × goals + 3 × assists + 1 × (tackles + interceptions)
+ *   per 90 minutes, with 270 extra minutes added so one good match can't top
+ *   the list (shrinks small samples towards zero)
+ *   score = 20 × per-90 contributions + 2 per match played (up to 10 matches)
+ * It is a starting point for scouting, not a judgement of ability.
+ */
+export function talentScore(p: {
+  matches: number;
+  minutes: number;
+  goals: number;
+  assists: number;
+  defensive: number;
+}): number {
+  const contributions = 4 * p.goals + 3 * p.assists + p.defensive;
+  const per90 = contributions / ((p.minutes + 270) / 90);
+  return Math.min(100, Math.round(per90 * 20 + Math.min(p.matches, 10) * 2));
+}
+
+export const TALENT_SCORE_EXPLAINER =
+  "Goals ×4, assists ×3, tackles and interceptions ×1, per 90 minutes (small samples are scaled down), plus 2 points per match up to 10. A starting point, not a verdict.";
