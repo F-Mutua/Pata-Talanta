@@ -58,7 +58,7 @@ export default function AppHeader({
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-[#353941] bg-[#1D2025] lg:flex">
+      <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-[#353941] bg-[#1D2025] text-white lg:flex">
         <div className="px-6 py-6">{logo}</div>
 
         <div className="mx-4 flex items-center gap-3 rounded-xl border border-[#353941] bg-[#22252B] p-3">
@@ -107,7 +107,7 @@ export default function AppHeader({
       </aside>
 
       {/* Phone / tablet top bar */}
-      <header className="sticky top-0 z-20 border-b border-[#353941] bg-[#1D2025] lg:hidden">
+      <header className="sticky top-0 z-20 border-b border-[#353941] bg-[#1D2025] text-white lg:hidden">
         <div className="flex items-center justify-between gap-3 px-4 py-3">
           {logo}
           <div className="flex items-center gap-2">
