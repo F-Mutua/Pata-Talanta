@@ -23,11 +23,17 @@ create table if not exists public.match_videos (
 );
 alter table public.match_videos enable row level security;
 
+-- Analysis job fields used by the upload → tap yourself → results flow.
+alter table public.match_videos add column if not exists job_id text;
+alter table public.match_videos add column if not exists track_id int;
+alter table public.match_videos add column if not exists result jsonb;
+alter table public.match_videos add column if not exists annotated_url text;
+
 drop policy if exists "Players manage own videos" on public.match_videos;
 create policy "Players manage own videos" on public.match_videos
   for all to authenticated
   using (player_id = auth.uid())
-  with check (player_id = auth.uid() and processing_status = 'uploaded');
+  with check (player_id = auth.uid());
 
 drop policy if exists "Scouts read videos" on public.match_videos;
 create policy "Scouts read videos" on public.match_videos
@@ -96,6 +102,23 @@ create policy "Scouts read heatmaps" on public.player_heatmaps
       where mp.id = match_player_id and public.is_discoverable_player(mp.player_id)
     )
   );
+
+-- Players save video results to their own appearances ("Add to match stats").
+drop policy if exists "Players write own heatmaps" on public.player_heatmaps;
+create policy "Players write own heatmaps" on public.player_heatmaps
+  for all to authenticated
+  using (exists (select 1 from public.match_players mp
+                 where mp.id = match_player_id and mp.player_id = auth.uid()))
+  with check (exists (select 1 from public.match_players mp
+                      where mp.id = match_player_id and mp.player_id = auth.uid()));
+
+drop policy if exists "Players update own stats" on public.performance_stats;
+create policy "Players update own stats" on public.performance_stats
+  for update to authenticated
+  using (exists (select 1 from public.match_players mp
+                 where mp.id = match_player_id and mp.player_id = auth.uid()))
+  with check (exists (select 1 from public.match_players mp
+                      where mp.id = match_player_id and mp.player_id = auth.uid()));
 
 -- Demo data: a heatmap for a player's first logged appearance (12 × 8 grid).
 -- Replace the uuid, then uncomment to test the UI before the pipeline exists.

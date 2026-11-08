@@ -96,6 +96,25 @@ export type MatchVideo = {
   file_size_bytes: number | null;
   processing_status: VideoStatus;
   created_at: string;
+  /** Video service job; "demo-…" when run against sample results. */
+  job_id: string | null;
+  /** The tracked person the player tapped as themselves. */
+  track_id: number | null;
+  result: VideoResult | null;
+  annotated_url: string | null;
+};
+
+/** Per-player estimates from the video service (see docs/video-api.md). */
+export type VideoResult = {
+  distance_m: number;
+  top_speed_kmh: number;
+  sprints: number;
+  touches: number;
+  /** rows × cols, columns run goal to goal (col 0 = own goal). */
+  heatmap: number[][];
+  annotated_video_url?: string | null;
+  duration_s?: number | null;
+  demo?: boolean;
 };
 
 export type ContactStatus = "pending" | "accepted" | "declined";
