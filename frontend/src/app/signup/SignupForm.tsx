@@ -46,9 +46,8 @@ export default function SignupForm() {
 
     try {
       const supabase = createClient();
-      // Scouts land on the scout dashboard (which asks for verification
-      // first); players on the player dashboard.
-      const home = role === "scout" ? "/scout" : "/dashboard";
+      // Scouts go to the scout dashboard; new players see the consent screen.
+      const home = role === "scout" ? "/scout" : "/welcome";
 
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),

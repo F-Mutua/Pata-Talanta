@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
+import ContributionChart, { type ChartPoint } from "@/components/ContributionChart";
+import { formatDate } from "@/lib/ui";
 
 const navigation = [
   {
@@ -106,6 +108,8 @@ async function DashboardContent() {
     .maybeSingle();
 
   if (profile?.role === "scout" || user.user_metadata?.role === "scout") redirect("/scout");
+  // New players see the consent screen once before anything else.
+  if (!user.user_metadata?.onboarded) redirect("/welcome");
 
   const [{ count: pendingRequests }, { count: views }] = await Promise.all([
     supabase
@@ -118,6 +122,66 @@ async function DashboardContent() {
       .select("id", { count: "exact", head: true })
       .eq("player_id", user.id),
   ]);
+
+  // Season numbers: appearances → matches + stats, plus which have video.
+  const { data: apps } = await supabase
+    .from("match_players")
+    .select("id, match_id, minutes_played")
+    .eq("player_id", user.id);
+  const appearances = apps || [];
+  const matchIds = [...new Set(appearances.map((a) => a.match_id as string))];
+  const appIds = appearances.map((a) => a.id as string);
+
+  const [{ data: matchRows }, { data: statRows }, { data: videoRows }] = await Promise.all([
+    matchIds.length
+      ? supabase.from("matches").select("id, opponent, competition, match_date, team_goals, opponent_goals").in("id", matchIds)
+      : Promise.resolve({ data: [] as never[] }),
+    appIds.length
+      ? supabase.from("performance_stats").select("match_player_id, goals, assists, data_source").in("match_player_id", appIds)
+      : Promise.resolve({ data: [] as never[] }),
+    supabase.from("match_videos").select("match_id").eq("player_id", user.id),
+  ]);
+
+  type M = { id: string; opponent: string | null; competition: string | null; match_date: string | null; team_goals: number | null; opponent_goals: number | null };
+  type S = { match_player_id: string; goals: number | null; assists: number | null; data_source: string | null };
+  const matchById = new Map(((matchRows || []) as M[]).map((m) => [m.id, m]));
+  const statByApp = new Map(((statRows || []) as S[]).map((s) => [s.match_player_id, s]));
+  const videoMatchIds = new Set(((videoRows || []) as { match_id: string | null }[]).map((v) => v.match_id).filter(Boolean));
+
+  const rows = appearances
+    .map((a) => {
+      const m = matchById.get(a.match_id as string) || null;
+      const st = statByApp.get(a.id as string) || null;
+      return {
+        id: a.id as string,
+        match: m,
+        minutes: (a.minutes_played as number | null) ?? null,
+        goals: st?.goals ?? 0,
+        assists: st?.assists ?? 0,
+        hasStats: !!st,
+        fromVideo: String(st?.data_source || "").includes("video") || videoMatchIds.has(a.match_id as string),
+      };
+    })
+    .sort((x, y) => (y.match?.match_date || "").localeCompare(x.match?.match_date || ""));
+
+  const totals = [
+    { label: "Matches", value: rows.length },
+    { label: "Goals", value: rows.reduce((t, r) => t + r.goals, 0) },
+    { label: "Assists", value: rows.reduce((t, r) => t + r.assists, 0) },
+    { label: "Minutes", value: rows.reduce((t, r) => t + (r.minutes || 0), 0).toLocaleString() },
+  ];
+
+  const chartPoints: ChartPoint[] = rows
+    .filter((r) => r.hasStats)
+    .slice(0, 8)
+    .reverse()
+    .map((r) => ({
+      id: r.id,
+      label: r.match?.opponent || "Unknown",
+      date: formatDate(r.match?.match_date),
+      goals: r.goals,
+      assists: r.assists,
+    }));
 
   const missing = [profile?.display_name, profile?.county, profile?.position].filter(
     (v) => !v
@@ -176,6 +240,76 @@ async function DashboardContent() {
           </div>
         </div>
       </section>
+
+      <section className="mt-10" aria-label="Season totals">
+        <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#F47721]">Season so far</p>
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {totals.map((t) => (
+            <div key={t.label} className="rounded-xl border border-[#353941] bg-[#22252B] p-5">
+              <p className="text-sm text-[#AEB5C0]">{t.label}</p>
+              <p className="mt-2 text-3xl font-black">{t.value}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <section className="rounded-xl border border-[#353941] bg-[#22252B] p-6">
+          <h2 className="text-lg font-bold">Goals + assists per match</h2>
+          <p className="mt-1 text-xs text-[#AEB5C0]">Your last {chartPoints.length || 8} matches with stats</p>
+          <div className="mt-5">
+            {chartPoints.length ? (
+              <ContributionChart points={chartPoints} />
+            ) : (
+              <div className="rounded-lg border border-dashed border-[#454A54] p-8 text-center text-sm text-[#AEB5C0]">
+                Your chart appears once you{" "}
+                <Link href="/dashboard/matches" className="font-semibold text-[#F47721] hover:underline">
+                  log a match with stats
+                </Link>
+                .
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-[#353941] bg-[#22252B] p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold">Recent matches</h2>
+            <Link href="/dashboard/matches" className="text-sm font-semibold text-[#F47721] hover:underline">
+              All →
+            </Link>
+          </div>
+          {rows.length === 0 ? (
+            <p className="mt-4 text-sm text-[#AEB5C0]">No matches logged yet.</p>
+          ) : (
+            <ul className="mt-4 divide-y divide-[#353941]">
+              {rows.slice(0, 5).map((r) => (
+                <li key={r.id} className="flex items-center justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">vs {r.match?.opponent || "Unknown"}</p>
+                    <p className="text-xs text-[#AEB5C0]">
+                      {formatDate(r.match?.match_date)}
+                      {r.match?.team_goals != null && r.match?.opponent_goals != null
+                        ? ` · ${r.match.team_goals}–${r.match.opponent_goals}`
+                        : ""}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2 text-sm">
+                    {r.fromVideo && (
+                      <span className="rounded-full bg-[#F47721]/15 px-2 py-0.5 text-[10px] font-bold uppercase text-[#F47721]">
+                        Video
+                      </span>
+                    )}
+                    <span className="text-[#D8DCE2]">
+                      {r.goals}G {r.assists}A
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
 
       <section className="mt-10">
         <div className="mb-5 flex items-center justify-between">
