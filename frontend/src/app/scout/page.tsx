@@ -37,6 +37,7 @@ export default function ScoutDashboard() {
   const [minMatches, setMinMatches] = useState(0);
   const [videoOnly, setVideoOnly] = useState(false);
   const [sort, setSort] = useState<SortKey>("score");
+  const [view, setView] = useState<"featured" | "all">("featured");
 
   useEffect(() => {
     if (!scoutId) return;
@@ -158,7 +159,7 @@ export default function ScoutDashboard() {
         return p.age >= lo && p.age <= hi;
       })
       .filter((p) => p.matches >= minMatches)
-      .filter((p) => !videoOnly || p.videos > 0)
+      .filter((p) => !videoOnly || p.videos > 0 || p.videoMatches > 0)
       .sort((a, b) => {
         if (sort === "name") return (a.display_name || "").localeCompare(b.display_name || "");
         if (sort === "matches") return b.matches - a.matches;
@@ -197,6 +198,46 @@ export default function ScoutDashboard() {
     setVideoOnly(false);
   };
 
+  const byScore = useMemo(
+    () => [...players].filter((p) => p.matches > 0).sort((a, b) => b.score - a.score),
+    [players]
+  );
+  const rows: { key: string; title: string; hint: string; players: PlayerCard[]; viewAll: () => void }[] = [
+    {
+      key: "top",
+      title: "Top rated",
+      hint: "Highest talent score",
+      players: byScore.slice(0, 3),
+      viewAll: () => {
+        resetFilters();
+        setSort("score");
+      },
+    },
+    {
+      key: "u18",
+      title: "Rising talent · under 18",
+      hint: "Best young players",
+      players: byScore.filter((p) => p.age !== null && p.age < 18).slice(0, 3),
+      viewAll: () => {
+        resetFilters();
+        setAgeBand("0-17");
+        setSort("score");
+      },
+    },
+    {
+      key: "video",
+      title: "Analysed from video",
+      hint: "Heatmaps and movement data",
+      players: byScore.filter((p) => p.videoMatches > 0 || p.videos > 0).slice(0, 3),
+      viewAll: () => {
+        resetFilters();
+        setVideoOnly(true);
+        setSort("score");
+      },
+    },
+  ];
+
+
   if (!scoutId) {
     return <p className="px-6 py-12 text-[#AEB5C0]">Checking your account…</p>;
   }
@@ -227,6 +268,82 @@ export default function ScoutDashboard() {
           ))}
         </section>
 
+        <div className="mt-8 flex gap-6 border-b border-[#353941]" role="tablist" aria-label="Scout views">
+          {(
+            [
+              ["featured", "Featured players"],
+              ["all", `All players${loading ? "" : ` (${players.length})`}`],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={view === key}
+              onClick={() => setView(key)}
+              className={`-mb-px border-b-2 pb-3 text-sm font-semibold transition ${
+                view === key ? "border-[#F47721] text-white" : "border-transparent text-[#AEB5C0] hover:text-white"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {error && <p className={`${ui.error} mt-6`}>{error}</p>}
+
+        {!loading && players.length === 0 && (
+          <div className={`${ui.empty} mt-8`}>
+            <p className="font-semibold text-white">No players are visible to scouts yet</p>
+            <p className="mx-auto mt-2 max-w-md text-sm">
+              Players appear here once they turn on &ldquo;Let scouts find me&rdquo; in their profile.
+              For the demo, run docs/seed-demo-data.sql in Supabase to add 30 example players.
+            </p>
+          </div>
+        )}
+
+        {view === "featured" && players.length > 0 && (
+          <div className="mt-6 space-y-8">
+            {[...rows, ...(recentPlayers.length ? [{ key: "recent", title: "Recently viewed", hint: "Players you opened", players: recentPlayers.slice(0, 3), viewAll: () => resetFilters() }] : [])]
+              .filter((r) => r.players.length > 0)
+              .map((r) => (
+                <section key={r.key} aria-labelledby={`row-${r.key}`}>
+                  <div className="mb-3 flex items-baseline justify-between gap-3">
+                    <h2 id={`row-${r.key}`} className="text-sm font-bold uppercase tracking-wide text-[#D8DCE2]">
+                      {r.title} <span className="ml-2 font-normal normal-case tracking-normal text-[#AEB5C0]">{r.hint}</span>
+                    </h2>
+                    <button
+                      onClick={() => {
+                        r.viewAll();
+                        setView("all");
+                      }}
+                      className="shrink-0 text-xs font-bold uppercase tracking-wide text-[#F47721] hover:underline"
+                    >
+                      View all →
+                    </button>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {r.players.map((p) => (
+                      <PlayerCardView key={p.id} p={p} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            <div className="text-center">
+              <button
+                onClick={() => {
+                  resetFilters();
+                  setView("all");
+                }}
+                className="text-sm font-bold uppercase tracking-wide text-[#F47721] hover:underline"
+              >
+                View all {players.length} players
+              </button>
+            </div>
+          </div>
+        )}
+
+        {view === "all" && players.length > 0 && (
+        <>
         {recentPlayers.length > 0 && (
           <section className="mt-10">
             <h2 className="text-sm font-bold uppercase tracking-wide text-[#AEB5C0]">Recently viewed</h2>
@@ -287,6 +404,7 @@ export default function ScoutDashboard() {
           </select>
           <select aria-label="Age" value={ageBand} onChange={(e) => setAgeBand(e.target.value)} className={ui.input}>
             <option value="">Any age</option>
+            <option value="0-17">Under 18</option>
             <option value="0-14">Under 15</option>
             <option value="15-17">15–17</option>
             <option value="18-20">18–20</option>
@@ -320,8 +438,6 @@ export default function ScoutDashboard() {
             Only players with match footage
           </label>
         </section>
-
-        {error && <p className={`${ui.error} mt-6`}>{error}</p>}
 
         {!loading && topPicks.length > 0 && (
           <section className="mt-8 rounded-xl border border-[#F47721]/40 bg-[#F47721]/5 p-5">
@@ -371,100 +487,109 @@ export default function ScoutDashboard() {
           </div>
         ) : (
           <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {filtered.map((p) => {
-              const rated = p.matches > 0;
-              const stars = Math.max(1, Math.min(5, Math.round(p.score / 20)));
-              return (
-                <Link
-                  key={p.id}
-                  href={`/scout/players/${p.id}`}
-                  className="group flex flex-col rounded-xl border border-[#353941] bg-[#22252B] p-5 transition hover:border-[#F47721]"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F47721]/15 font-black text-[#F47721]">
-                        {(p.display_name || "?").charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="truncate text-lg font-bold">{p.display_name || "Unnamed player"}</h3>
-                        {p.is_demo && (
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-[#AEB5C0]">
-                            Example data
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <span
-                      className="text-lg text-[#AEB5C0] transition group-hover:translate-x-0.5 group-hover:text-[#F47721]"
-                      aria-hidden="true"
-                    >
-                      ↗
-                    </span>
-                  </div>
-
-                  {rated ? (
-                    <p className="mt-3 flex gap-0.5 text-lg leading-none" aria-label={`Rated ${stars} of 5 from talent score`}>
-                      {[1, 2, 3, 4, 5].map((i) => (
-                        <span key={i} className={i <= stars ? "text-[#F47721]" : "text-[#454A54]"} aria-hidden="true">
-                          ★
-                        </span>
-                      ))}
-                    </p>
-                  ) : (
-                    <p className="mt-3 text-xs text-[#AEB5C0]">Not rated yet · no matches logged</p>
-                  )}
-
-                  <div className="mt-4" title={TALENT_SCORE_EXPLAINER}>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-[#AEB5C0]">Talent score</span>
-                      <span className="rounded bg-[#F47721]/15 px-2 py-0.5 font-bold text-[#F47721]">{p.score}</span>
-                    </div>
-                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#353941]">
-                      <div className="h-full rounded-full bg-[#F47721]" style={{ width: `${p.score}%` }} />
-                    </div>
-                  </div>
-
-                  <dl className="mt-4 space-y-2 text-xs">
-                    {[
-                      ["Position", p.position || "—"],
-                      ["Age · County", [p.age !== null ? p.age : null, p.county].filter((x) => x !== null && x !== "").join(" · ") || "—"],
-                    ].map(([label, value]) => (
-                      <div key={String(label)} className="flex items-center justify-between gap-3">
-                        <dt className="text-[#AEB5C0]">{label}:</dt>
-                        <dd className="truncate rounded bg-[#17191D] px-2 py-0.5 font-semibold text-[#D8DCE2]">{value}</dd>
-                      </div>
-                    ))}
-                    <div className="flex items-center justify-between gap-3">
-                      <dt className="text-[#AEB5C0]">Footage:</dt>
-                      <dd
-                        className={`rounded px-2 py-0.5 font-semibold ${
-                          p.videos > 0 ? "bg-[#F47721]/15 text-[#F47721]" : "bg-[#17191D] text-[#AEB5C0]"
-                        }`}
-                      >
-                        {p.videos > 0 ? `${p.videos} video${p.videos === 1 ? "" : "s"}` : "None"}
-                      </dd>
-                    </div>
-                  </dl>
-
-                  <dl className="mt-4 grid grid-cols-4 gap-2 border-t border-[#353941] pt-4 text-center">
-                    {[
-                      ["Apps", p.matches],
-                      ["Mins", p.minutes],
-                      ["Goals", p.goals],
-                      ["Assists", p.assists],
-                    ].map(([label, value]) => (
-                      <div key={label}>
-                        <dt className="text-[10px] uppercase tracking-wide text-[#AEB5C0]">{label}</dt>
-                        <dd className="mt-1 font-bold">{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </Link>
-              );
-            })}
+            {filtered.map((p) => (
+              <PlayerCardView key={p.id} p={p} />
+            ))}
           </div>
+        )}
+        </>
         )}
       </div>
     </main>
+  );
+}
+
+function PlayerCardView({ p }: { p: PlayerCard }) {
+  const rated = p.matches > 0;
+  const stars = Math.max(1, Math.min(5, Math.round(p.score / 20)));
+  return (
+    <Link
+      href={`/scout/players/${p.id}`}
+      className="group flex flex-col rounded-xl border border-[#353941] bg-[#22252B] p-5 transition hover:border-[#F47721]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F47721]/15 font-black text-[#F47721]">
+            {(p.display_name || "?").charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-bold">{p.display_name || "Unnamed player"}</h3>
+            {p.is_demo && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-[#AEB5C0]">
+                Example data
+              </span>
+            )}
+          </div>
+        </div>
+        <span
+          className="text-lg text-[#AEB5C0] transition group-hover:translate-x-0.5 group-hover:text-[#F47721]"
+          aria-hidden="true"
+        >
+          ↗
+        </span>
+      </div>
+
+      {rated ? (
+        <p className="mt-3 flex gap-0.5 text-lg leading-none" aria-label={`Rated ${stars} of 5 from talent score`}>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <span key={i} className={i <= stars ? "text-[#F47721]" : "text-[#454A54]"} aria-hidden="true">
+              ★
+            </span>
+          ))}
+        </p>
+      ) : (
+        <p className="mt-3 text-xs text-[#AEB5C0]">Not rated yet · no matches logged</p>
+      )}
+
+      <div className="mt-4" title={TALENT_SCORE_EXPLAINER}>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-[#AEB5C0]">Talent score</span>
+          <span className="rounded bg-[#F47721]/15 px-2 py-0.5 font-bold text-[#F47721]">{p.score}</span>
+        </div>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#353941]">
+          <div className="h-full rounded-full bg-[#F47721]" style={{ width: `${p.score}%` }} />
+        </div>
+      </div>
+
+      <dl className="mt-4 space-y-2 text-xs">
+        {[
+          ["Position", p.position || "—"],
+          ["Age · County", [p.age !== null ? p.age : null, p.county].filter((x) => x !== null && x !== "").join(" · ") || "—"],
+        ].map(([label, value]) => (
+          <div key={String(label)} className="flex items-center justify-between gap-3">
+            <dt className="text-[#AEB5C0]">{label}:</dt>
+            <dd className="truncate rounded bg-[#17191D] px-2 py-0.5 font-semibold text-[#D8DCE2]">{value}</dd>
+          </div>
+        ))}
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-[#AEB5C0]">Footage:</dt>
+          <dd
+            className={`rounded px-2 py-0.5 font-semibold ${
+              p.videos > 0 || p.videoMatches > 0 ? "bg-[#F47721]/15 text-[#F47721]" : "bg-[#17191D] text-[#AEB5C0]"
+            }`}
+          >
+            {p.videos > 0
+              ? `${p.videos} video${p.videos === 1 ? "" : "s"}`
+              : p.videoMatches > 0
+                ? `${p.videoMatches} match${p.videoMatches === 1 ? "" : "es"} analysed`
+                : "None"}
+          </dd>
+        </div>
+      </dl>
+
+      <dl className="mt-4 grid grid-cols-4 gap-2 border-t border-[#353941] pt-4 text-center">
+        {[
+          ["Apps", p.matches],
+          ["Mins", p.minutes],
+          ["Goals", p.goals],
+          ["Assists", p.assists],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-[10px] uppercase tracking-wide text-[#AEB5C0]">{label}</dt>
+            <dd className="mt-1 font-bold">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </Link>
   );
 }
