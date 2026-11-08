@@ -47,7 +47,7 @@ export default function ScoutDashboard() {
         // the intent explicit.
         const { data: profiles, error: pErr } = await supabase
           .from("profiles")
-          .select("id, display_name, county, position, role, date_of_birth, discoverable, guardian_consent, consent_at")
+          .select("*")
           .eq("role", "player")
           .eq("discoverable", true)
           .limit(500);
@@ -385,7 +385,14 @@ export default function ScoutDashboard() {
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F47721]/15 font-black text-[#F47721]">
                         {(p.display_name || "?").charAt(0).toUpperCase()}
                       </div>
-                      <h3 className="truncate text-lg font-bold">{p.display_name || "Unnamed player"}</h3>
+                      <div className="min-w-0">
+                        <h3 className="truncate text-lg font-bold">{p.display_name || "Unnamed player"}</h3>
+                        {p.is_demo && (
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-[#AEB5C0]">
+                            Example data
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <span
                       className="text-lg text-[#AEB5C0] transition group-hover:translate-x-0.5 group-hover:text-[#F47721]"

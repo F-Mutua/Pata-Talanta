@@ -45,7 +45,7 @@ export default function PlayerView({ playerId }: { playerId: string }) {
       try {
         const { data: profile, error: pErr } = await supabase
           .from("profiles")
-          .select("id, display_name, county, position, role, date_of_birth, discoverable, guardian_consent, consent_at")
+          .select("*")
           .eq("id", playerId)
           .eq("role", "player")
           .maybeSingle();
@@ -245,6 +245,11 @@ export default function PlayerView({ playerId }: { playerId: string }) {
               <div className="min-w-0">
                 {firstNames && <p className="text-sm text-[#AEB5C0]">{firstNames}</p>}
                 <h1 className="truncate text-3xl font-black sm:text-4xl">{lastName}</h1>
+                {profile.is_demo && (
+                  <span className="mt-1 inline-block rounded border border-[#454A54] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#AEB5C0]">
+                    Example data · fictional player
+                  </span>
+                )}
                 <p className="mt-1 text-sm text-[#AEB5C0]">
                   {[profile.position, profile.county].filter(Boolean).join(" · ") || "Grassroots player"}
                 </p>

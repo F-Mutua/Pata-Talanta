@@ -10,6 +10,8 @@ export type PlayerProfile = {
   discoverable: boolean | null;
   guardian_consent: boolean | null;
   consent_at: string | null;
+  /** Example data from docs/seed-demo-data.sql (column may not exist). */
+  is_demo?: boolean | null;
 };
 
 export type PlayerContact = {
