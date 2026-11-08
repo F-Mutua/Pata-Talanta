@@ -74,6 +74,7 @@ export type PerformanceStat = {
   top_speed_kmh: number | null;
   sprint_count: number | null;
   touches: number | null;
+  data_source?: string | null;
 };
 
 export type Heatmap = {
