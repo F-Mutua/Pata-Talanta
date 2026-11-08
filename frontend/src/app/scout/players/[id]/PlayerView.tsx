@@ -5,9 +5,10 @@ import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { useScout } from "@/lib/useScout";
 import { ui, formatDate, formatMeeting, errorMessage } from "@/lib/ui";
-import { totalStats, combineHeatmaps } from "@/lib/stats";
+import { totalStats, combineHeatmaps, talentScore, TALENT_SCORE_EXPLAINER } from "@/lib/stats";
 import Heatmap from "@/components/Heatmap";
-import StatGrid from "@/components/StatGrid";
+import ScoreGauge from "@/components/ScoreGauge";
+import ContributionChart, { type ChartPoint } from "@/components/ContributionChart";
 import {
   ageFrom,
   VIDEO_BUCKET,
@@ -170,58 +171,260 @@ export default function PlayerView({ playerId }: { playerId: string }) {
   }
 
   const { profile } = data;
+  const age = ageFrom(profile.date_of_birth);
+  const nameParts = (profile.display_name || "Unnamed player").trim().split(/\s+/);
+  const lastName = nameParts.length > 1 ? nameParts.pop()! : nameParts[0];
+  const firstNames = nameParts.length ? nameParts.join(" ") : "";
+
   const appearanceLabel = (id: string) => {
     const a = data.appearances.find((x) => x.id === id);
     return a ? `vs ${a.match?.opponent || "Unknown"} · ${formatDate(a.match?.match_date)}` : "Match";
   };
 
+  const withStats = data.appearances.filter((a) => a.stat);
+  const defensive = totals.tackles + totals.interceptions;
+  const score = talentScore({ ...totals, defensive });
+  const isVideo = (st: PerformanceStat | null) =>
+    String((st as (PerformanceStat & { data_source?: string | null }) | null)?.data_source || "").includes("video");
+
+  const chartPoints: ChartPoint[] = withStats
+    .slice(0, 8)
+    .reverse()
+    .map((a) => ({
+      id: a.id,
+      label: a.match?.opponent || "Unknown",
+      date: formatDate(a.match?.match_date),
+      goals: a.stat?.goals || 0,
+      assists: a.stat?.assists || 0,
+    }));
+
+  const infoBoxes: { label: string; value: string }[] = [
+    {
+      label: "Date of birth",
+      value: profile.date_of_birth ? `${formatDate(profile.date_of_birth)} (${age})` : "Not provided",
+    },
+    { label: "Position", value: profile.position || "Not provided" },
+    { label: "County", value: profile.county || "Not provided" },
+    { label: "Matches", value: String(totals.matches) },
+    { label: "Goals", value: String(totals.goals) },
+    { label: "Assists", value: String(totals.assists) },
+  ];
+
+  const physical = [
+    { label: "Minutes played", value: totals.minutes.toLocaleString(), est: false },
+    {
+      label: "Passing accuracy",
+      value: totals.passingAccuracy === null ? "—" : `${totals.passingAccuracy}%`,
+      est: false,
+    },
+    { label: "Tackles + interceptions", value: String(defensive), est: false },
+    { label: "Distance covered", value: `${totals.distanceKm.toFixed(1)} km`, est: true },
+    { label: "Top speed", value: totals.topSpeed === null ? "—" : `${totals.topSpeed} km/h`, est: true },
+  ];
+
+  const card = "rounded-xl border border-[#353941] bg-[#1D2025] p-5";
+  const cardTitle = "text-sm font-bold uppercase tracking-wide text-[#D8DCE2]";
+
   return (
     <main className="text-white">
-      <div className="mx-auto max-w-6xl px-6 py-12">
-        <Link href="/scout" className="text-sm text-[#AEB5C0] hover:text-[#F47721]">
-          ← Back to discovery
-        </Link>
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        <nav className="text-xs text-[#AEB5C0]" aria-label="Breadcrumb">
+          <Link href="/scout" className="hover:text-[#F47721]">
+            Discover players
+          </Link>{" "}
+          / <span className="font-semibold text-white">{profile.display_name || "Player"}</span>
+        </nav>
 
-        <section className="mt-6 flex flex-wrap items-center gap-5">
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#F47721]/15 text-3xl font-black text-[#F47721]">
-            {(profile.display_name || "?").charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <p className={ui.eyebrow}>Player profile</p>
-            <h1 className="mt-1 text-4xl font-black">{profile.display_name || "Unnamed player"}</h1>
-            <p className="mt-2 text-[#AEB5C0]">
-              {[
-                ageFrom(profile.date_of_birth) !== null ? `Age ${ageFrom(profile.date_of_birth)}` : null,
-                profile.position,
-                profile.county,
-              ]
-                .filter(Boolean)
-                .join(" · ") || "Position and county not provided"}
-            </p>
+        {/* Header: identity + key facts */}
+        <section className="mt-4 overflow-hidden rounded-2xl border border-[#353941] bg-gradient-to-r from-[#22252B] to-[#1D2025]">
+          <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[auto_1fr_auto] lg:items-center">
+            <div className="flex items-center gap-5">
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-full bg-[#F47721]/15 text-4xl font-black text-[#F47721] ring-4 ring-[#F47721]/30">
+                {(profile.display_name || "?").charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                {firstNames && <p className="text-sm text-[#AEB5C0]">{firstNames}</p>}
+                <h1 className="truncate text-3xl font-black sm:text-4xl">{lastName}</h1>
+                <p className="mt-1 text-sm text-[#AEB5C0]">
+                  {[profile.position, profile.county].filter(Boolean).join(" · ") || "Grassroots player"}
+                </p>
+              </div>
+            </div>
+
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {infoBoxes.map((b) => (
+                <div key={b.label}>
+                  <dt className="text-[10px] font-bold uppercase tracking-wider text-[#AEB5C0]">{b.label}</dt>
+                  <dd className="mt-1 truncate rounded-md border border-[#353941] bg-[#17191D] px-3 py-2 text-sm font-semibold">
+                    {b.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+
+            <a href="#contact" className={`${ui.button} text-center lg:self-center`}>
+              Request full profile
+            </a>
           </div>
         </section>
 
-        <section className="mt-10">
-          <h2 className="mb-4 text-xl font-bold">Performance summary</h2>
-          <StatGrid totals={totals} />
+        {/* Row: chart · club history · score */}
+        <div className="mt-6 grid gap-6 lg:grid-cols-3">
+          <section className={card}>
+            <h2 className={cardTitle}>Goals + assists per match</h2>
+            <div className="mt-4">
+              {chartPoints.length ? (
+                <ContributionChart points={chartPoints} />
+              ) : (
+                <p className="py-10 text-center text-sm text-[#AEB5C0]">No match statistics yet.</p>
+              )}
+            </div>
+          </section>
+
+          <section className={card}>
+            <h2 className={cardTitle}>Club history</h2>
+            {data.clubs.length === 0 ? (
+              <p className="py-10 text-center text-sm text-[#AEB5C0]">No clubs listed.</p>
+            ) : (
+              <table className="mt-3 w-full text-left text-sm">
+                <thead className="text-[10px] uppercase tracking-wider text-[#AEB5C0]">
+                  <tr>
+                    <th className="pb-2 font-semibold">Years</th>
+                    <th className="pb-2 font-semibold">Club</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.clubs.slice(0, 6).map((c) => (
+                    <tr key={c.id} className="border-t border-[#353941]">
+                      <td className="whitespace-nowrap py-2.5 pr-3 text-xs text-[#AEB5C0]">
+                        {c.start_date?.slice(0, 4) || "?"}–{c.is_current ? "now" : c.end_date?.slice(0, 4) || "?"}
+                      </td>
+                      <td className="py-2.5">
+                        <p className="font-semibold">
+                          {c.club_name}
+                          {c.is_current && <span className="ml-2 text-[10px] font-bold text-[#F47721]">CURRENT</span>}
+                        </p>
+                        <p className="text-xs text-[#AEB5C0]">{c.league_or_division || "League not specified"}</p>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+
+          <section className={card}>
+            <h2 className={cardTitle}>Talent score</h2>
+            <div className="mt-4">
+              <ScoreGauge value={score} caption={TALENT_SCORE_EXPLAINER} />
+            </div>
+          </section>
+        </div>
+
+        {/* Technical and physical */}
+        <section className={`${card} mt-6`}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className={cardTitle}>Season detail</h2>
+            <span className="rounded-full border border-[#F47721]/40 px-2.5 py-0.5 text-[10px] font-semibold text-[#F47721]">
+              est. = estimate from video
+            </span>
+          </div>
+          <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            {physical.map((m) => (
+              <div key={m.label} className="rounded-lg border border-[#353941] bg-[#17191D] p-4">
+                <dt className="text-xs text-[#AEB5C0]">
+                  {m.label}
+                  {m.est && <span className="ml-1 font-semibold text-[#F47721]">est.</span>}
+                </dt>
+                <dd className="mt-1 text-xl font-black">{m.value}</dd>
+              </div>
+            ))}
+          </dl>
           <p className="mt-3 text-xs text-[#AEB5C0]">
-            Self-reported unless marked otherwise. Use alongside footage and your own
-            assessment.
+            Match stats are entered by the player; distance and speed are estimated from phone
+            footage. Use them alongside the videos and your own assessment.
           </p>
         </section>
 
-        <div className="mt-10 grid gap-8 lg:grid-cols-[1.3fr_1fr]">
-          <section className={ui.card}>
+        {/* Row: matches · heatmap */}
+        <div className="mt-6 grid gap-6 lg:grid-cols-[1.5fr_1fr]">
+          <section className={card}>
+            <h2 className={cardTitle}>Matches</h2>
+            {data.appearances.length === 0 ? (
+              <p className="py-10 text-center text-sm text-[#AEB5C0]">No matches logged.</p>
+            ) : (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full min-w-[520px] text-left text-sm">
+                  <thead className="text-[10px] uppercase tracking-wider text-[#AEB5C0]">
+                    <tr>
+                      <th className="pb-2 font-semibold">Date</th>
+                      <th className="pb-2 font-semibold">Opponent</th>
+                      <th className="pb-2 font-semibold">Result</th>
+                      <th className="pb-2 text-right font-semibold">Min</th>
+                      <th className="pb-2 text-right font-semibold">G</th>
+                      <th className="pb-2 text-right font-semibold">A</th>
+                      <th className="pb-2 text-right font-semibold">Km <span className="text-[#F47721]">est.</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.appearances.slice(0, 12).map((a) => {
+                      const tg = a.match?.team_goals;
+                      const og = a.match?.opponent_goals;
+                      const res = tg == null || og == null ? null : tg > og ? "W" : tg < og ? "L" : "D";
+                      return (
+                        <tr key={a.id} className="border-t border-[#353941]">
+                          <td className="whitespace-nowrap py-2.5 pr-3 text-xs text-[#AEB5C0]">
+                            {formatDate(a.match?.match_date)}
+                          </td>
+                          <td className="py-2.5 pr-3">
+                            <span className="font-medium">{a.match?.opponent || "Unknown"}</span>
+                            {isVideo(a.stat) && (
+                              <span className="ml-2 rounded-full bg-[#F47721]/15 px-1.5 py-0.5 text-[9px] font-bold uppercase text-[#F47721]">
+                                Video
+                              </span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap py-2.5 pr-3">
+                            {res && (
+                              <span
+                                className={`mr-2 inline-block w-5 rounded text-center text-[10px] font-bold ${
+                                  res === "W"
+                                    ? "bg-green-500/20 text-green-300"
+                                    : res === "L"
+                                      ? "bg-red-500/20 text-red-300"
+                                      : "bg-[#454A54] text-[#D8DCE2]"
+                                }`}
+                                aria-label={res === "W" ? "Win" : res === "L" ? "Loss" : "Draw"}
+                              >
+                                {res}
+                              </span>
+                            )}
+                            {tg ?? "–"}–{og ?? "–"}
+                          </td>
+                          <td className="py-2.5 text-right">{a.minutes_played ?? "–"}</td>
+                          <td className="py-2.5 text-right font-semibold">{a.stat?.goals ?? "–"}</td>
+                          <td className="py-2.5 text-right font-semibold">{a.stat?.assists ?? "–"}</td>
+                          <td className="py-2.5 text-right text-[#D8DCE2]">{a.stat?.distance_km ?? "–"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className={card}>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-xl font-bold">Activity heatmap</h2>
+              <h2 className={cardTitle}>Activity heatmap</h2>
               {data.heatmaps.length > 0 && (
                 <select
                   aria-label="Heatmap match"
                   value={heatmapSel}
                   onChange={(e) => setHeatmapSel(e.target.value)}
-                  className="rounded-lg border border-[#454A54] bg-[#17191D] px-3 py-2 text-sm"
+                  className="rounded-lg border border-[#454A54] bg-[#17191D] px-3 py-1.5 text-xs"
                 >
-                  <option value="all">All analysed matches ({data.heatmaps.length})</option>
+                  <option value="all">All analysed ({data.heatmaps.length})</option>
                   {data.heatmaps.map((h) => (
                     <option key={h.id} value={h.match_player_id}>
                       {appearanceLabel(h.match_player_id)}
@@ -230,39 +433,31 @@ export default function PlayerView({ playerId }: { playerId: string }) {
                 </select>
               )}
             </div>
-            <div className="mt-5">
+            <div className="mt-4">
               {heatmapGrid ? (
-                <Heatmap intensities={heatmapGrid} />
+                <Heatmap intensities={heatmapGrid} caption="Estimated from match video." />
               ) : (
-                <div className={ui.empty}>No analysed footage yet, so there&apos;s no heatmap.</div>
+                <p className="py-10 text-center text-sm text-[#AEB5C0]">No analysed footage yet.</p>
               )}
             </div>
           </section>
-
-          <ContactPanel
-            playerId={playerId}
-            scoutId={scoutId!}
-            playerName={profile.display_name || "this player"}
-            isMinor={(ageFrom(profile.date_of_birth) ?? 99) < 18}
-            requests={data.requests}
-            onSent={(r) => setData((d) => (d ? { ...d, requests: [r, ...d.requests] } : d))}
-          />
         </div>
 
-        <section className="mt-10">
-          <h2 className="mb-4 text-xl font-bold">Match footage</h2>
+        {/* Footage */}
+        <section className="mt-6">
+          <h2 className={`${cardTitle} mb-3`}>Match footage</h2>
           {data.videos.length === 0 ? (
             <div className={ui.empty}>No videos uploaded.</div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {data.videos.map((v) => (
-                <article key={v.id} className={ui.card}>
+                <article key={v.id} className={card}>
                   {v.url ? (
-                    <video src={v.url} controls preload="metadata" className="w-full rounded-lg bg-black" />
+                    <video src={v.url} controls preload="metadata" playsInline className="w-full rounded-lg bg-black" />
                   ) : (
                     <div className={ui.empty}>Video unavailable</div>
                   )}
-                  <h3 className="mt-4 font-bold">{v.title}</h3>
+                  <h3 className="mt-3 font-bold">{v.title}</h3>
                   <p className="mt-1 text-xs text-[#AEB5C0]">Uploaded {formatDate(v.created_at)}</p>
                   {v.description && <p className="mt-2 text-sm text-[#AEB5C0]">{v.description}</p>}
                 </article>
@@ -271,67 +466,15 @@ export default function PlayerView({ playerId }: { playerId: string }) {
           )}
         </section>
 
-        <div className="mt-10 grid gap-8 lg:grid-cols-2">
-          <section>
-            <h2 className="mb-4 text-xl font-bold">Recent matches</h2>
-            {data.appearances.length === 0 ? (
-              <div className={ui.empty}>No matches logged.</div>
-            ) : (
-              <div className="overflow-x-auto rounded-xl border border-[#353941]">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-[#1D2025] text-xs uppercase text-[#AEB5C0]">
-                    <tr>
-                      <th className="px-4 py-3">Match</th>
-                      <th className="px-4 py-3">Score</th>
-                      <th className="px-4 py-3 text-right">Min</th>
-                      <th className="px-4 py-3 text-right">G</th>
-                      <th className="px-4 py-3 text-right">A</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.appearances.slice(0, 10).map((a) => (
-                      <tr key={a.id} className="border-t border-[#353941] bg-[#22252B]">
-                        <td className="px-4 py-3">
-                          <p className="font-medium">vs {a.match?.opponent || "Unknown"}</p>
-                          <p className="text-xs text-[#AEB5C0]">{formatDate(a.match?.match_date)}</p>
-                        </td>
-                        <td className="px-4 py-3">
-                          {a.match?.team_goals ?? "–"}–{a.match?.opponent_goals ?? "–"}
-                        </td>
-                        <td className="px-4 py-3 text-right">{a.minutes_played ?? "–"}</td>
-                        <td className="px-4 py-3 text-right">{a.stat?.goals ?? "–"}</td>
-                        <td className="px-4 py-3 text-right">{a.stat?.assists ?? "–"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          <section>
-            <h2 className="mb-4 text-xl font-bold">Club history</h2>
-            {data.clubs.length === 0 ? (
-              <div className={ui.empty}>No clubs listed.</div>
-            ) : (
-              <div className="space-y-3">
-                {data.clubs.map((c) => (
-                  <div key={c.id} className="rounded-xl border border-[#353941] bg-[#22252B] p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-bold">{c.club_name}</p>
-                      {c.is_current && (
-                        <span className="text-xs font-bold text-[#F47721]">CURRENT</span>
-                      )}
-                    </div>
-                    <p className="mt-1 text-sm text-[#AEB5C0]">
-                      {c.league_or_division || "League not specified"}
-                    </p>
-                    {c.achievement && <p className="mt-2 text-sm">{c.achievement}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+        <div id="contact" className="mt-6 scroll-mt-20 lg:max-w-2xl">
+          <ContactPanel
+            playerId={playerId}
+            scoutId={scoutId!}
+            playerName={profile.display_name || "this player"}
+            isMinor={(age ?? 99) < 18}
+            requests={data.requests}
+            onSent={(r) => setData((d) => (d ? { ...d, requests: [r, ...d.requests] } : d))}
+          />
         </div>
       </div>
     </main>
@@ -404,7 +547,7 @@ function ContactPanel({
 
   return (
     <section className={`${ui.card} h-fit`}>
-      <h2 className="text-xl font-bold">Contact {playerName}</h2>
+      <h2 className="text-xl font-bold">Request full profile</h2>
 
       {request ? (
         <div className="mt-4 space-y-4 text-sm">
@@ -450,8 +593,8 @@ function ContactPanel({
       ) : (
         <form onSubmit={send} className="mt-4 space-y-4">
           <p className="text-sm text-[#AEB5C0]">
-            Introduce yourself and your organisation. The player decides whether to accept
-            and share their contact details. You can send one request per player.
+            Contact details stay hidden until {playerName} accepts. Introduce yourself and
+            your organisation, and propose a meeting if you like. One request per player.
           </p>
           {isMinor && (
             <p className="rounded-lg border border-[#F47721]/40 bg-[#F47721]/10 p-3 text-xs text-[#F47721]">
@@ -493,7 +636,7 @@ function ContactPanel({
           </div>
           {error && <p className={ui.error}>{error}</p>}
           <button type="submit" disabled={sending} className={`${ui.button} w-full`}>
-            {sending ? "Sending…" : "Send contact request"}
+            {sending ? "Sending…" : "Request full profile"}
           </button>
         </form>
       )}

@@ -203,7 +203,7 @@ export default function ScoutDashboard() {
 
   return (
     <main className="text-white">
-      <div className="mx-auto max-w-7xl px-6 py-12">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className={ui.eyebrow}>Scout dashboard</p>
@@ -245,8 +245,27 @@ export default function ScoutDashboard() {
           </section>
         )}
 
+        {positions.length > 0 && (
+          <div className="mt-8 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Quick position filter">
+            {["", ...positions].map((pos) => (
+              <button
+                key={pos || "all"}
+                onClick={() => setPosition(pos)}
+                aria-pressed={position === pos}
+                className={`shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                  position === pos
+                    ? "bg-[#F47721] text-white"
+                    : "border border-[#454A54] text-[#D8DCE2] hover:border-[#F47721]"
+                }`}
+              >
+                {pos || "All positions"}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Filters: one row above the results */}
-        <section className="mt-8 grid gap-3 rounded-xl border border-[#353941] bg-[#1D2025] p-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr]">
+        <section className="mt-4 grid gap-3 rounded-xl border border-[#353941] bg-[#1D2025] p-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr]">
           <input
             aria-label="Search by name"
             value={query}
@@ -351,55 +370,91 @@ export default function ScoutDashboard() {
             </button>
           </div>
         ) : (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((p) => (
-              <Link
-                key={p.id}
-                href={`/scout/players/${p.id}`}
-                className="group rounded-xl border border-[#353941] bg-[#22252B] p-6 transition hover:border-[#F47721]"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F47721]/15 font-black text-[#F47721]">
-                      {(p.display_name || "?").charAt(0).toUpperCase()}
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {filtered.map((p) => {
+              const rated = p.matches > 0;
+              const stars = Math.max(1, Math.min(5, Math.round(p.score / 20)));
+              return (
+                <Link
+                  key={p.id}
+                  href={`/scout/players/${p.id}`}
+                  className="group flex flex-col rounded-xl border border-[#353941] bg-[#22252B] p-5 transition hover:border-[#F47721]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F47721]/15 font-black text-[#F47721]">
+                        {(p.display_name || "?").charAt(0).toUpperCase()}
+                      </div>
+                      <h3 className="truncate text-lg font-bold">{p.display_name || "Unnamed player"}</h3>
                     </div>
-                    <div className="min-w-0">
-                      <h3 className="truncate font-bold">{p.display_name || "Unnamed player"}</h3>
-                      <p className="truncate text-sm text-[#AEB5C0]">
-                        {[p.age !== null ? `Age ${p.age}` : null, p.position, p.county]
-                          .filter(Boolean)
-                          .join(" · ") || "Details not provided"}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-1">
-                    <span className="text-right" title={TALENT_SCORE_EXPLAINER}>
-                      <span className="block text-lg font-black leading-none">{p.score}</span>
-                      <span className="text-[10px] uppercase tracking-wide text-[#AEB5C0]">score</span>
+                    <span
+                      className="text-lg text-[#AEB5C0] transition group-hover:translate-x-0.5 group-hover:text-[#F47721]"
+                      aria-hidden="true"
+                    >
+                      ↗
                     </span>
-                    {p.videos > 0 && (
-                      <span className="rounded-full bg-[#F47721]/15 px-2 py-0.5 text-[10px] font-bold uppercase text-[#F47721]">
-                        Video
-                      </span>
-                    )}
                   </div>
-                </div>
 
-                <dl className="mt-5 grid grid-cols-4 gap-2 border-t border-[#353941] pt-4 text-center">
-                  {[
-                    ["Apps", p.matches],
-                    ["Mins", p.minutes],
-                    ["Goals", p.goals],
-                    ["Assists", p.assists],
-                  ].map(([label, value]) => (
-                    <div key={label}>
-                      <dt className="text-[11px] uppercase tracking-wide text-[#AEB5C0]">{label}</dt>
-                      <dd className="mt-1 font-bold">{value}</dd>
+                  {rated ? (
+                    <p className="mt-3 flex gap-0.5 text-lg leading-none" aria-label={`Rated ${stars} of 5 from talent score`}>
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <span key={i} className={i <= stars ? "text-[#F47721]" : "text-[#454A54]"} aria-hidden="true">
+                          ★
+                        </span>
+                      ))}
+                    </p>
+                  ) : (
+                    <p className="mt-3 text-xs text-[#AEB5C0]">Not rated yet · no matches logged</p>
+                  )}
+
+                  <div className="mt-4" title={TALENT_SCORE_EXPLAINER}>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-[#AEB5C0]">Talent score</span>
+                      <span className="rounded bg-[#F47721]/15 px-2 py-0.5 font-bold text-[#F47721]">{p.score}</span>
                     </div>
-                  ))}
-                </dl>
-              </Link>
-            ))}
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#353941]">
+                      <div className="h-full rounded-full bg-[#F47721]" style={{ width: `${p.score}%` }} />
+                    </div>
+                  </div>
+
+                  <dl className="mt-4 space-y-2 text-xs">
+                    {[
+                      ["Position", p.position || "—"],
+                      ["Age · County", [p.age !== null ? p.age : null, p.county].filter((x) => x !== null && x !== "").join(" · ") || "—"],
+                    ].map(([label, value]) => (
+                      <div key={String(label)} className="flex items-center justify-between gap-3">
+                        <dt className="text-[#AEB5C0]">{label}:</dt>
+                        <dd className="truncate rounded bg-[#17191D] px-2 py-0.5 font-semibold text-[#D8DCE2]">{value}</dd>
+                      </div>
+                    ))}
+                    <div className="flex items-center justify-between gap-3">
+                      <dt className="text-[#AEB5C0]">Footage:</dt>
+                      <dd
+                        className={`rounded px-2 py-0.5 font-semibold ${
+                          p.videos > 0 ? "bg-[#F47721]/15 text-[#F47721]" : "bg-[#17191D] text-[#AEB5C0]"
+                        }`}
+                      >
+                        {p.videos > 0 ? `${p.videos} video${p.videos === 1 ? "" : "s"}` : "None"}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <dl className="mt-4 grid grid-cols-4 gap-2 border-t border-[#353941] pt-4 text-center">
+                    {[
+                      ["Apps", p.matches],
+                      ["Mins", p.minutes],
+                      ["Goals", p.goals],
+                      ["Assists", p.assists],
+                    ].map(([label, value]) => (
+                      <div key={label}>
+                        <dt className="text-[10px] uppercase tracking-wide text-[#AEB5C0]">{label}</dt>
+                        <dd className="mt-1 font-bold">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>

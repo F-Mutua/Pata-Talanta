@@ -28,7 +28,7 @@ function timeAgo(iso: string) {
  * In-app notifications. Rows are created by database triggers (a request
  * arrives, a player answers). Opening the panel marks them as read.
  */
-export default function NotificationBell() {
+export default function NotificationBell({ align = "right" }: { align?: "left" | "right" }) {
   const pathname = usePathname();
   const [items, setItems] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
@@ -105,7 +105,7 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[#353941] bg-[#1D2025] shadow-2xl">
+        <div className={`absolute ${align === "left" ? "left-0" : "right-0"} z-30 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[#353941] bg-[#1D2025] shadow-2xl`}>
           <p className="border-b border-[#353941] px-4 py-3 text-sm font-bold">Notifications</p>
           {items.length === 0 ? (
             <p className="px-4 py-6 text-center text-sm text-[#AEB5C0]">Nothing yet.</p>

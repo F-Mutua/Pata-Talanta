@@ -536,9 +536,12 @@ export default function PerformancePage() {
 
         {/* Technical and physical metrics */}
         <section className="mb-10">
-          <h2 className="mb-4 text-xl font-bold">
+          <h2 className="text-xl font-bold">
             Technical and physical metrics
           </h2>
+          <p className="mb-4 mt-1 text-sm text-[#AEB5C0]">
+            Distance, top speed and sprints that come from video are estimates.
+          </p>
 
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             <MetricCard label="Total shots" value={totals.shots} />
