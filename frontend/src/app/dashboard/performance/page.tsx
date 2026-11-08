@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import Heatmap from "@/components/Heatmap";
 import { combineHeatmaps } from "@/lib/stats";
@@ -255,6 +256,8 @@ export default function PerformancePage() {
   }
 
   useEffect(() => {
+    // loadPerformance() awaits before its state updates that matter here.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadPerformance();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -437,57 +440,36 @@ export default function PerformancePage() {
   );
 
   const inputClass =
-    "w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-3 text-white outline-none transition focus:border-orange-500";
+    "w-full rounded-lg border border-[#454A54] bg-[#1D2025] px-3 py-3 text-white outline-none transition focus:border-[#F47721]";
 
-  const labelClass = "mb-2 block text-sm font-medium text-neutral-300";
+  const labelClass = "mb-2 block text-sm font-medium text-[#D8DCE2]";
 
-  function MetricCard({
-    label,
-    value,
-    detail,
-  }: {
-    label: string;
-    value: string | number;
-    detail?: string;
-  }) {
-    return (
-      <div className="rounded-xl border border-neutral-800 bg-neutral-900 p-5">
-        <p className="text-sm text-neutral-400">{label}</p>
-        <p className="mt-2 text-3xl font-bold tracking-tight text-white">
-          {value}
-        </p>
-        {detail && (
-          <p className="mt-1 text-xs text-neutral-500">{detail}</p>
-        )}
-      </div>
-    );
-  }
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-black px-5 py-12 text-white">
+      <main className="px-5 py-12 text-white">
         <div className="mx-auto max-w-6xl">
-          <p className="text-neutral-400">Loading your performance...</p>
+          <p className="text-[#AEB5C0]">Loading your performance...</p>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-black px-5 py-10 text-white">
+    <main className="px-5 py-10 text-white">
       <div className="mx-auto max-w-6xl">
         {/* Page heading */}
         <div className="mb-10 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-orange-500">
+            <p className="mb-2 text-sm font-semibold uppercase tracking-[0.2em] text-[#F47721]">
               Pata Talanta / Player dashboard
             </p>
 
             <h1 className="text-3xl font-bold sm:text-4xl">
-              Performance <span className="text-orange-500">centre.</span>
+              Performance <span className="text-[#F47721]">centre.</span>
             </h1>
 
-            <p className="mt-3 max-w-xl text-sm leading-6 text-neutral-400">
+            <p className="mt-3 max-w-xl text-sm leading-6 text-[#AEB5C0]">
               Track your match contributions, technical ability and physical
               performance as your football journey develops.
             </p>
@@ -495,20 +477,20 @@ export default function PerformancePage() {
 
           <a
             href="/dashboard"
-            className="rounded-lg border border-neutral-700 px-4 py-2 text-sm text-neutral-300 transition hover:border-orange-500 hover:text-white"
+            className="rounded-lg border border-[#454A54] px-4 py-2 text-sm text-[#D8DCE2] transition hover:border-[#F47721] hover:text-white"
           >
             Back to dashboard
           </a>
         </div>
 
         {error && (
-          <div className="mb-6 rounded-lg border border-red-900 bg-red-950/50 p-4 text-sm text-red-300">
+          <div className="mb-6 rounded-lg border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-300">
             {error}
           </div>
         )}
 
         {success && (
-          <div className="mb-6 rounded-lg border border-green-900 bg-green-950/40 p-4 text-sm text-green-300">
+          <div className="mb-6 rounded-lg border border-green-500/40 bg-green-500/10 p-4 text-sm text-green-300">
             {success}
           </div>
         )}
@@ -518,11 +500,11 @@ export default function PerformancePage() {
           <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
             <div>
               <h2 className="text-xl font-bold">Your season overview</h2>
-              <p className="mt-1 text-sm text-neutral-500">
+              <p className="mt-1 text-sm text-[#AEB5C0]">
                 Statistics calculated from your recorded match appearances.
               </p>
             </div>
-            <span className="text-xs text-neutral-500">
+            <span className="text-xs text-[#AEB5C0]">
               {totals.recorded} performance records
             </span>
           </div>
@@ -583,14 +565,14 @@ export default function PerformancePage() {
         </section>
 
         {/* Performance trends */}
-        <section className="mb-10 rounded-xl border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
+        <section className="mb-10 rounded-xl border border-[#353941] bg-[#22252B] p-5 sm:p-6">
           <h2 className="text-xl font-bold">Recent performance trend</h2>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="mt-1 text-sm text-[#AEB5C0]">
             Goals and assists across your latest recorded appearances.
           </p>
 
           {trendRecords.length === 0 ? (
-            <p className="py-10 text-center text-sm text-neutral-500">
+            <p className="py-10 text-center text-sm text-[#AEB5C0]">
               Your performance trend will appear after you record match
               statistics.
             </p>
@@ -609,19 +591,19 @@ export default function PerformancePage() {
                         <span className="font-medium text-white">
                           vs {item.match?.opponent || "Unknown opponent"}
                         </span>
-                        <span className="ml-2 text-xs text-neutral-500">
+                        <span className="ml-2 text-xs text-[#AEB5C0]">
                           {formatDate(item.match?.match_date || null)}
                         </span>
                       </div>
 
-                      <span className="whitespace-nowrap text-neutral-300">
+                      <span className="whitespace-nowrap text-[#D8DCE2]">
                         {goals}G / {assists}A
                       </span>
                     </div>
 
-                    <div className="h-3 overflow-hidden rounded-full bg-neutral-800">
+                    <div className="h-3 overflow-hidden rounded-full bg-[#353941]">
                       <div
-                        className="h-full rounded-full bg-orange-500 transition-all"
+                        className="h-full rounded-full bg-[#F47721] transition-all"
                         style={{ width: `${width}%` }}
                       />
                     </div>
@@ -633,11 +615,11 @@ export default function PerformancePage() {
         </section>
 
         {/* Heatmap */}
-        <section className="mb-10 rounded-xl border border-neutral-800 bg-neutral-950 p-5 sm:p-6">
+        <section className="mb-10 rounded-xl border border-[#353941] bg-[#22252B] p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold">Activity heatmap</h2>
-              <p className="mt-1 text-sm text-neutral-500">
+              <p className="mt-1 text-sm text-[#AEB5C0]">
                 Where you spend your time on the pitch, generated from analysed match video.
               </p>
             </div>
@@ -646,7 +628,7 @@ export default function PerformancePage() {
                 aria-label="Heatmap match"
                 value={heatmapSel}
                 onChange={(e) => setHeatmapSel(e.target.value)}
-                className="rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-sm"
+                className="rounded-lg border border-[#454A54] bg-[#1D2025] px-3 py-2 text-sm"
               >
                 <option value="all">All analysed matches ({heatmaps.length})</option>
                 {heatmaps.map((h) => {
@@ -670,11 +652,11 @@ export default function PerformancePage() {
               return grid ? (
                 <Heatmap intensities={grid} />
               ) : (
-                <div className="rounded-lg border border-dashed border-neutral-700 p-8 text-center text-sm text-neutral-500">
+                <div className="rounded-lg border border-dashed border-[#454A54] p-8 text-center text-sm text-[#AEB5C0]">
                   No heatmap yet.{" "}
-                  <a href="/dashboard/videos" className="font-semibold text-orange-500 hover:text-orange-400">
+                  <Link href="/dashboard/videos" className="font-semibold text-[#F47721] hover:text-[#DB6418]">
                     Upload match footage
-                  </a>{" "}
+                  </Link>{" "}
                   linked to a match to generate one.
                 </div>
               );
@@ -683,29 +665,29 @@ export default function PerformancePage() {
         </section>
 
         {/* Add performance record */}
-        <section className="mb-10 rounded-xl border border-neutral-800 bg-neutral-950 p-5 sm:p-7">
+        <section className="mb-10 rounded-xl border border-[#353941] bg-[#22252B] p-5 sm:p-7">
           <div className="mb-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-orange-500">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#F47721]">
               Match data
             </p>
             <h2 className="mt-2 text-xl font-bold">Record performance</h2>
-            <p className="mt-2 text-sm text-neutral-400">
+            <p className="mt-2 text-sm text-[#AEB5C0]">
               Select one of your match appearances and enter your statistics.
             </p>
           </div>
 
           {appearances.length === 0 ? (
-            <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
+            <div className="rounded-lg border border-[#353941] bg-[#1D2025] p-5">
               <p className="font-medium text-white">
                 No match appearances found.
               </p>
-              <p className="mt-2 text-sm text-neutral-400">
+              <p className="mt-2 text-sm text-[#AEB5C0]">
                 Add a match and make sure your player appearance is registered
                 before recording performance statistics.
               </p>
               <a
                 href="/dashboard/matches"
-                className="mt-4 inline-block text-sm font-semibold text-orange-500 hover:text-orange-400"
+                className="mt-4 inline-block text-sm font-semibold text-[#F47721] hover:text-[#DB6418]"
               >
                 Go to match history →
               </a>
@@ -737,24 +719,24 @@ export default function PerformancePage() {
                 </select>
 
                 {selectedAppearance && (
-                  <div className="mt-3 rounded-lg bg-neutral-900 p-3 text-sm text-neutral-400">
+                  <div className="mt-3 rounded-lg bg-[#1D2025] p-3 text-sm text-[#AEB5C0]">
                     <p>
-                      <span className="text-neutral-200">Club:</span>{" "}
+                      <span className="text-white">Club:</span>{" "}
                       {selectedAppearance.match?.club_name || "Not specified"}
                     </p>
                     <p className="mt-1">
-                      <span className="text-neutral-200">Minutes played:</span>{" "}
+                      <span className="text-white">Minutes played:</span>{" "}
                       {displayNumber(selectedAppearance.minutes_played)}
                     </p>
                     <p className="mt-1">
-                      <span className="text-neutral-200">Position:</span>{" "}
+                      <span className="text-white">Position:</span>{" "}
                       {selectedAppearance.position_played || "Not specified"}
                     </p>
                   </div>
                 )}
 
                 {selectedAppearance?.performance && (
-                  <p className="mt-3 text-sm text-orange-400">
+                  <p className="mt-3 text-sm text-[#F47721]">
                     This appearance already has a performance record.
                   </p>
                 )}
@@ -904,7 +886,7 @@ export default function PerformancePage() {
                   !form.match_player_id ||
                   Boolean(selectedAppearance?.performance)
                 }
-                className="w-full rounded-lg bg-orange-500 px-5 py-3 font-bold text-black transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
+                className="w-full rounded-lg bg-[#F47721] px-5 py-3 font-bold text-white transition hover:bg-[#DB6418] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
               >
                 {saving ? "Saving performance..." : "Save performance"}
               </button>
@@ -916,13 +898,13 @@ export default function PerformancePage() {
         <section>
           <div className="mb-4">
             <h2 className="text-xl font-bold">Match-by-match performance</h2>
-            <p className="mt-1 text-sm text-neutral-500">
+            <p className="mt-1 text-sm text-[#AEB5C0]">
               Your match appearances and recorded statistics.
             </p>
           </div>
 
           {appearances.length === 0 ? (
-            <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-6 text-center text-sm text-neutral-500">
+            <div className="rounded-xl border border-[#353941] bg-[#22252B] p-6 text-center text-sm text-[#AEB5C0]">
               No match appearances to display yet.
             </div>
           ) : (
@@ -937,26 +919,26 @@ export default function PerformancePage() {
                 return (
                   <div
                     key={item.id}
-                    className="rounded-xl border border-neutral-800 bg-neutral-950 p-5"
+                    className="rounded-xl border border-[#353941] bg-[#22252B] p-5"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <h3 className="font-bold text-white">
                           {item.match?.club_name || "Your team"}{" "}
-                          <span className="font-normal text-neutral-500">
+                          <span className="font-normal text-[#AEB5C0]">
                             vs
                           </span>{" "}
                           {item.match?.opponent || "Unknown opponent"}
                         </h3>
 
-                        <p className="mt-1 text-xs text-neutral-500">
+                        <p className="mt-1 text-xs text-[#AEB5C0]">
                           {formatDate(item.match?.match_date || null)}
                           {item.match?.competition
                             ? ` · ${item.match.competition}`
                             : ""}
                         </p>
 
-                        <p className="mt-1 text-xs text-neutral-500">
+                        <p className="mt-1 text-xs text-[#AEB5C0]">
                           {item.minutes_played ?? "—"} minutes
                           {item.position_played
                             ? ` · ${item.position_played}`
@@ -973,36 +955,40 @@ export default function PerformancePage() {
 
                         <p
                           className={`mt-1 text-xs ${
-                            stat ? "text-orange-400" : "text-neutral-500"
+                            stat ? "text-[#F47721]" : "text-[#AEB5C0]"
                           }`}
                         >
-                          {stat ? "Performance recorded" : "Awaiting statistics"}
+                          {stat
+                            ? String(stat.data_source || "").includes("video")
+                              ? "Stats from video"
+                              : "Performance recorded"
+                            : "Awaiting statistics"}
                         </p>
                       </div>
                     </div>
 
                     {stat && (
-                      <div className="mt-5 grid grid-cols-2 gap-3 border-t border-neutral-800 pt-4 sm:grid-cols-4">
+                      <div className="mt-5 grid grid-cols-2 gap-3 border-t border-[#353941] pt-4 sm:grid-cols-4">
                         <div>
-                          <p className="text-xs text-neutral-500">Goals</p>
+                          <p className="text-xs text-[#AEB5C0]">Goals</p>
                           <p className="mt-1 font-semibold">
                             {stat.goals ?? "—"}
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-neutral-500">Assists</p>
+                          <p className="text-xs text-[#AEB5C0]">Assists</p>
                           <p className="mt-1 font-semibold">
                             {stat.assists ?? "—"}
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-neutral-500">Tackles</p>
+                          <p className="text-xs text-[#AEB5C0]">Tackles</p>
                           <p className="mt-1 font-semibold">
                             {stat.tackles ?? "—"}
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-neutral-500">
+                          <p className="text-xs text-[#AEB5C0]">
                             Interceptions
                           </p>
                           <p className="mt-1 font-semibold">
@@ -1010,7 +996,7 @@ export default function PerformancePage() {
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-neutral-500">
+                          <p className="text-xs text-[#AEB5C0]">
                             Passing accuracy
                           </p>
                           <p className="mt-1 font-semibold">
@@ -1018,7 +1004,7 @@ export default function PerformancePage() {
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-neutral-500">
+                          <p className="text-xs text-[#AEB5C0]">
                             Distance
                           </p>
                           <p className="mt-1 font-semibold">
@@ -1026,13 +1012,13 @@ export default function PerformancePage() {
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-neutral-500">Top speed</p>
+                          <p className="text-xs text-[#AEB5C0]">Top speed</p>
                           <p className="mt-1 font-semibold">
                             {displayNumber(stat.top_speed_kmh, " km/h")}
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-neutral-500">Sprints</p>
+                          <p className="text-xs text-[#AEB5C0]">Sprints</p>
                           <p className="mt-1 font-semibold">
                             {stat.sprint_count ?? "—"}
                           </p>
@@ -1041,7 +1027,7 @@ export default function PerformancePage() {
                     )}
 
                     {stat?.notes && (
-                      <p className="mt-4 border-t border-neutral-800 pt-3 text-sm leading-6 text-neutral-400">
+                      <p className="mt-4 border-t border-[#353941] pt-3 text-sm leading-6 text-[#AEB5C0]">
                         {stat.notes}
                       </p>
                     )}
@@ -1053,5 +1039,27 @@ export default function PerformancePage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string | number;
+  detail?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-[#353941] bg-[#1D2025] p-5">
+      <p className="text-sm text-[#AEB5C0]">{label}</p>
+      <p className="mt-2 text-3xl font-bold tracking-tight text-white">
+        {value}
+      </p>
+      {detail && (
+        <p className="mt-1 text-xs text-[#AEB5C0]">{detail}</p>
+      )}
+    </div>
   );
 }

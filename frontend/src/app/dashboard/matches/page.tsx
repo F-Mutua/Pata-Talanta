@@ -26,6 +26,21 @@ type MatchPlayer = {
   minutes_played: number | null;
 };
 
+const statFields = [
+  ["goals", "Goals"],
+  ["assists", "Assists"],
+  ["shots", "Shots"],
+  ["shots_on_target", "Shots on target"],
+  ["passes_completed", "Passes completed"],
+  ["passes_attempted", "Passes attempted"],
+  ["tackles", "Tackles"],
+  ["interceptions", "Interceptions"],
+] as const;
+
+type StatKey = (typeof statFields)[number][0];
+
+const emptyStats = Object.fromEntries(statFields.map(([k]) => [k, ""])) as Record<StatKey, string>;
+
 export default function MatchesPage() {
   const supabase = createClient();
 
@@ -44,6 +59,7 @@ export default function MatchesPage() {
   const [teamGoals, setTeamGoals] = useState("");
   const [opponentGoals, setOpponentGoals] = useState("");
   const [minutesPlayed, setMinutesPlayed] = useState("");
+  const [stats, setStats] = useState<Record<StatKey, string>>(emptyStats);
   const [notes, setNotes] = useState("");
 
   useEffect(() => {
@@ -150,10 +166,28 @@ export default function MatchesPage() {
     }
 
     const numericFields = [
-      { name: "Your team's goals", value: teamGoals },
-      { name: "Opponent's goals", value: opponentGoals },
+      { name: "Your team&apos;s goals", value: teamGoals },
+      { name: "Opponent&apos;s goals", value: opponentGoals },
       { name: "Minutes played", value: minutesPlayed },
     ];
+
+    for (const [key, label] of statFields) {
+      numericFields.push({ name: label, value: stats[key] });
+    }
+
+    const n = (v: string) => (v === "" ? null : Number(v));
+    if (n(stats.shots) !== null && n(stats.shots_on_target) !== null && n(stats.shots_on_target)! > n(stats.shots)!) {
+      setError("Shots on target cannot be more than total shots.");
+      return;
+    }
+    if (
+      n(stats.passes_attempted) !== null &&
+      n(stats.passes_completed) !== null &&
+      n(stats.passes_completed)! > n(stats.passes_attempted)!
+    ) {
+      setError("Completed passes cannot be more than attempted passes.");
+      return;
+    }
 
     for (const field of numericFields) {
       if (
@@ -208,14 +242,16 @@ export default function MatchesPage() {
       // 2. Register the player's appearance separately.
       // minutes_played belongs to match_players.
 
-      const { error: appearanceError } = await supabase
+      const { data: appearance, error: appearanceError } = await supabase
         .from("match_players")
         .insert({
           match_id: newMatch.id,
           player_id: user.id,
           minutes_played:
             minutesPlayed === "" ? null : Number(minutesPlayed),
-        });
+        })
+        .select("id")
+        .single();
 
       if (appearanceError) {
         console.error("Appearance registration error:", appearanceError);
@@ -226,6 +262,22 @@ export default function MatchesPage() {
 
         await loadMatches();
         return;
+      }
+
+      // Optional stats go to performance_stats for this appearance.
+      if (statFields.some(([k]) => stats[k] !== "")) {
+        const { error: statsError } = await supabase.from("performance_stats").insert({
+          match_player_id: appearance.id,
+          ...Object.fromEntries(statFields.map(([k]) => [k, n(stats[k])])),
+          data_source: "player_entry",
+        });
+        if (statsError) {
+          setError(
+            `The match was saved, but your stats could not be: ${statsError.message}. You can add them on the Performance page.`
+          );
+          await loadMatches();
+          return;
+        }
       }
 
       setSuccess("Match saved successfully!");
@@ -240,6 +292,7 @@ export default function MatchesPage() {
       setTeamGoals("");
       setOpponentGoals("");
       setMinutesPlayed("");
+      setStats(emptyStats);
       setNotes("");
 
       await loadMatches();
@@ -257,25 +310,25 @@ export default function MatchesPage() {
   }
 
   return (
-    <main className="min-h-screen bg-black px-4 py-10 text-white sm:px-8">
+    <main className="px-4 py-10 text-white sm:px-8">
       <div className="mx-auto max-w-5xl">
 
         <a
           href="/dashboard"
-          className="mb-6 inline-block text-sm text-orange-500 hover:text-orange-400"
+          className="mb-6 inline-block text-sm text-[#F47721] hover:text-[#DB6418]"
         >
           ← Back to Dashboard
         </a>
 
         <h1 className="text-3xl font-bold">
-          Match <span className="text-orange-500">History</span>
+          Match <span className="text-[#F47721]">History</span>
         </h1>
 
-        <p className="mt-2 text-gray-400">
+        <p className="mt-2 text-[#AEB5C0]">
           Record your matches and build your football journey.
         </p>
 
-        <section className="mt-8 rounded-xl border border-gray-800 bg-gray-950 p-5 sm:p-7">
+        <section className="mt-8 rounded-xl border border-[#353941] bg-[#22252B] p-5 sm:p-7">
 
           <h2 className="mb-6 text-xl font-semibold">
             Record a Match
@@ -286,19 +339,19 @@ export default function MatchesPage() {
             <div className="grid gap-5 sm:grid-cols-2">
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Club represented
                 </label>
                 <input
                   value={clubName}
                   onChange={(e) => setClubName(e.target.value)}
                   placeholder="Your club name"
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Opponent *
                 </label>
                 <input
@@ -306,24 +359,24 @@ export default function MatchesPage() {
                   value={opponent}
                   onChange={(e) => setOpponent(e.target.value)}
                   placeholder="Opponent team"
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Competition
                 </label>
                 <input
                   value={competition}
                   onChange={(e) => setCompetition(e.target.value)}
                   placeholder="League, tournament, friendly..."
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Match date *
                 </label>
                 <input
@@ -332,30 +385,30 @@ export default function MatchesPage() {
                   value={matchDate}
                   onChange={(e) => setMatchDate(e.target.value)}
                   max={new Date().toISOString().split("T")[0]}
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Venue
                 </label>
                 <input
                   value={venue}
                   onChange={(e) => setVenue(e.target.value)}
                   placeholder="Where was the match played?"
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Match type
                 </label>
                 <select
                   value={matchType}
                   onChange={(e) => setMatchType(e.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 >
                   <option value="home">Home</option>
                   <option value="away">Away</option>
@@ -364,8 +417,8 @@ export default function MatchesPage() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
-                  Your team's goals
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
+                  Your team&apos;s goals
                 </label>
                 <input
                   type="number"
@@ -374,13 +427,13 @@ export default function MatchesPage() {
                   value={teamGoals}
                   onChange={(e) => setTeamGoals(e.target.value)}
                   placeholder="0"
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
-                  Opponent's goals
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
+                  Opponent&apos;s goals
                 </label>
                 <input
                   type="number"
@@ -389,12 +442,12 @@ export default function MatchesPage() {
                   value={opponentGoals}
                   onChange={(e) => setOpponentGoals(e.target.value)}
                   placeholder="0"
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Minutes played
                 </label>
                 <input
@@ -404,14 +457,44 @@ export default function MatchesPage() {
                   value={minutesPlayed}
                   onChange={(e) => setMinutesPlayed(e.target.value)}
                   placeholder="90"
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
             </div>
 
+            <fieldset>
+              <legend className="mb-1 text-sm font-semibold text-white">
+                Your stats <span className="font-normal text-[#AEB5C0]">(optional)</span>
+              </legend>
+              <p className="mb-3 text-xs text-[#AEB5C0]">
+                Leave blank anything you didn&apos;t track. Video analysis can add distance,
+                speed and sprints later.
+              </p>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {statFields.map(([key, label]) => (
+                  <div key={key}>
+                    <label htmlFor={`stat-${key}`} className="mb-2 block text-sm text-[#D8DCE2]">
+                      {label}
+                    </label>
+                    <input
+                      id={`stat-${key}`}
+                      type="number"
+                      inputMode="numeric"
+                      min="0"
+                      step="1"
+                      value={stats[key]}
+                      onChange={(e) => setStats((prev) => ({ ...prev, [key]: e.target.value }))}
+                      placeholder="0"
+                      className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
+                    />
+                  </div>
+                ))}
+              </div>
+            </fieldset>
+
             <div>
-              <label className="mb-2 block text-sm text-gray-300">
+              <label className="mb-2 block text-sm text-[#D8DCE2]">
                 Match notes
               </label>
               <textarea
@@ -419,18 +502,18 @@ export default function MatchesPage() {
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
                 placeholder="Describe your performance or important moments..."
-                className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
               />
             </div>
 
             {error && (
-              <p className="rounded-lg border border-red-800 bg-red-950 p-3 text-sm text-red-300">
+              <p className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
                 {error}
               </p>
             )}
 
             {success && (
-              <p className="rounded-lg border border-orange-800 bg-orange-950 p-3 text-sm text-orange-300">
+              <p className="rounded-lg border border-green-500/40 bg-green-500/10 p-3 text-sm text-green-300">
                 {success}
               </p>
             )}
@@ -438,7 +521,7 @@ export default function MatchesPage() {
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-orange-500 px-6 py-3 font-semibold text-black transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg bg-[#F47721] px-6 py-3 font-bold text-white transition hover:bg-[#DB6418] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? "Saving..." : "Save Match"}
             </button>
@@ -453,11 +536,11 @@ export default function MatchesPage() {
           </h2>
 
           {loading ? (
-            <p className="text-gray-400">
+            <p className="text-[#AEB5C0]">
               Loading matches...
             </p>
           ) : matches.length === 0 ? (
-            <div className="rounded-xl border border-gray-800 bg-gray-950 p-6 text-gray-400">
+            <div className="rounded-xl border border-[#353941] bg-[#22252B] p-6 text-[#AEB5C0]">
               No matches recorded yet. Add your first match above.
             </div>
           ) : (
@@ -466,7 +549,7 @@ export default function MatchesPage() {
               {matches.map((match) => (
                 <article
                   key={match.id}
-                  className="rounded-xl border border-gray-800 bg-gray-950 p-5"
+                  className="rounded-xl border border-[#353941] bg-[#22252B] p-5"
                 >
 
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -477,44 +560,44 @@ export default function MatchesPage() {
                         {match.opponent || "Opponent not specified"}
                       </h3>
 
-                      <p className="mt-1 text-sm text-gray-400">
+                      <p className="mt-1 text-sm text-[#AEB5C0]">
                         {match.competition || "Competition not specified"}
                       </p>
                     </div>
 
-                    <span className="rounded-full bg-orange-500/10 px-3 py-1 text-xs font-semibold capitalize text-orange-400">
+                    <span className="rounded-full bg-[#F47721]/15 px-3 py-1 text-xs font-semibold capitalize text-[#F47721]">
                       {match.match_type || "Match"}
                     </span>
 
                   </div>
 
-                  <div className="mt-4 grid gap-3 text-sm text-gray-300 sm:grid-cols-3">
+                  <div className="mt-4 grid gap-3 text-sm text-[#D8DCE2] sm:grid-cols-3">
 
                     <p>
-                      <span className="text-gray-500">Date:</span>{" "}
+                      <span className="text-[#AEB5C0]">Date:</span>{" "}
                       {match.match_date}
                     </p>
 
                     <p>
-                      <span className="text-gray-500">Score:</span>{" "}
+                      <span className="text-[#AEB5C0]">Score:</span>{" "}
                       {match.team_goals ?? "-"} - {match.opponent_goals ?? "-"}
                     </p>
 
                     <p>
-                      <span className="text-gray-500">Minutes:</span>{" "}
+                      <span className="text-[#AEB5C0]">Minutes:</span>{" "}
                       {match.minutes_played ?? "-"}
                     </p>
 
                   </div>
 
                   {match.venue && (
-                    <p className="mt-3 text-sm text-gray-400">
+                    <p className="mt-3 text-sm text-[#AEB5C0]">
                       Venue: {match.venue}
                     </p>
                   )}
 
                   {match.notes && (
-                    <p className="mt-3 text-sm text-gray-400">
+                    <p className="mt-3 text-sm text-[#AEB5C0]">
                       {match.notes}
                     </p>
                   )}

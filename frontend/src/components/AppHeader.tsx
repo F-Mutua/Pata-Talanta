@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+import NotificationBell from "./NotificationBell";
 
 export type NavItem = { href: string; label: string };
 
@@ -70,7 +71,8 @@ export default function AppHeader({
           <span className="hidden max-w-[12rem] truncate text-sm text-[#AEB5C0] sm:block">
             {name}
           </span>
-          <span className="rounded-full border border-[#F47721]/40 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#F47721]">
+          <NotificationBell />
+          <span className="hidden rounded-full border border-[#F47721]/40 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[#F47721] sm:inline">
             {roleLabel}
           </span>
           <button
