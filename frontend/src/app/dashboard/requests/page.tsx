@@ -57,7 +57,7 @@ export default function PlayerRequestsPage() {
       setRows(
         requests.map((r) => ({
           ...r,
-          scout_name: byId.get(r.scout_id)?.display_name || "A verified scout",
+          scout_name: byId.get(r.scout_id)?.display_name || "A scout",
           scout_county: byId.get(r.scout_id)?.county ?? null,
         }))
       );
@@ -98,7 +98,7 @@ export default function PlayerRequestsPage() {
         <p className={ui.eyebrow}>Opportunities</p>
         <h1 className={ui.h1}>Scout Requests</h1>
         <p className={ui.lead}>
-          Only scouts verified by BCF can contact you. If you accept a request, that scout
+          Scouts can only contact you while your profile is visible. If you accept a request, that scout
           can see the phone number and email in your contact details. Nobody else can.
         </p>
 
@@ -216,7 +216,7 @@ function RequestHeader({ r }: { r: Row }) {
       <div>
         <h3 className="text-lg font-bold">{r.scout_name}</h3>
         <p className="mt-1 text-xs text-[#AEB5C0]">
-          Verified scout{r.scout_county ? ` · ${r.scout_county}` : ""} · {formatDate(r.created_at)}
+          Scout{r.scout_county ? ` · ${r.scout_county}` : ""} · {formatDate(r.created_at)}
         </p>
       </div>
       <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${badge[r.status]}`}>

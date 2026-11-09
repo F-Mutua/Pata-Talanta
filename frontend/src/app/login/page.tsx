@@ -5,10 +5,19 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+import type { Role } from "@/lib/types";
+
+const roles: { value: Role; title: string; description: string }[] = [
+  { value: "player", title: "Player", description: "Go to my player dashboard" },
+  { value: "scout", title: "Scout", description: "Go to the scout dashboard" },
+];
 
 export default function LoginPage() {
   const router = useRouter();
 
+  // Only decides where to land. The account's real role still wins: the
+  // dashboard sends scouts to /scout, and ScoutGate sends players back.
+  const [role, setRole] = useState<Role>("player");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -32,7 +41,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/dashboard");
+      router.push(role === "scout" ? "/scout" : "/dashboard");
       router.refresh();
     } catch {
       setError("Something went wrong. Please try again.");
@@ -75,6 +84,35 @@ export default function LoginPage() {
           </p>
 
           <form onSubmit={handleLogin} className="mt-8 space-y-5">
+            <fieldset>
+              <legend className="mb-2 block text-sm">I am signing in as a</legend>
+              <div className="grid grid-cols-2 gap-3">
+                {roles.map((r) => (
+                  <label
+                    key={r.value}
+                    className={`cursor-pointer rounded-lg border p-4 transition ${
+                      role === r.value
+                        ? "border-[#F47721] bg-[#F47721]/10"
+                        : "border-[#454A54] hover:border-[#AEB5C0]"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="role"
+                      value={r.value}
+                      checked={role === r.value}
+                      onChange={() => setRole(r.value)}
+                      className="sr-only"
+                    />
+                    <span className="block font-bold">{r.title}</span>
+                    <span className="mt-1 block text-xs leading-5 text-[#AEB5C0]">
+                      {r.description}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
             <div>
               <label htmlFor="email" className="mb-2 block text-sm">
                 Email address
@@ -93,9 +131,17 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label htmlFor="password" className="mb-2 block text-sm">
-                Password
-              </label>
+              <div className="mb-2 flex items-center justify-between">
+                <label htmlFor="password" className="block text-sm">
+                  Password
+                </label>
+                <Link
+                  href="/forgot-password"
+                  className="text-sm font-semibold text-[#F47721] hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
 
               <input
                 id="password"
@@ -127,7 +173,7 @@ export default function LoginPage() {
           <p className="mt-6 text-center text-sm text-[#AEB5C0]">
             Don&apos;t have an account?{" "}
             <Link
-              href="/signup"
+              href={`/signup?role=${role}`}
               className="font-semibold text-[#F47721] hover:underline"
             >
               Create an account

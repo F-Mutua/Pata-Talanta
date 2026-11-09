@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { useScout } from "@/lib/useScout";
 import { ui, formatDate, formatMeeting, errorMessage } from "@/lib/ui";
-import { totalStats, combineHeatmaps } from "@/lib/stats";
-import Heatmap from "@/components/Heatmap";
-import StatGrid from "@/components/StatGrid";
+import PlayerBoard from "@/components/PlayerBoard";
 import {
   ageFrom,
   VIDEO_BUCKET,
@@ -35,7 +33,6 @@ export default function PlayerView({ playerId }: { playerId: string }) {
   const scoutId = useScout();
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState("");
-  const [heatmapSel, setHeatmapSel] = useState<string>("all");
 
   useEffect(() => {
     if (!scoutId) return;
@@ -44,7 +41,7 @@ export default function PlayerView({ playerId }: { playerId: string }) {
       try {
         const { data: profile, error: pErr } = await supabase
           .from("profiles")
-          .select("id, display_name, county, position, role, date_of_birth, discoverable, guardian_consent, consent_at")
+          .select("*")
           .eq("id", playerId)
           .eq("role", "player")
           .maybeSingle();
@@ -138,22 +135,7 @@ export default function PlayerView({ playerId }: { playerId: string }) {
     })();
   }, [scoutId, playerId]);
 
-  const totals = useMemo(
-    () =>
-      data
-        ? totalStats(
-            data.appearances,
-            data.appearances.map((a) => a.stat).filter((s): s is PerformanceStat => !!s)
-          )
-        : null,
-    [data]
-  );
 
-  const heatmapGrid = useMemo(() => {
-    if (!data?.heatmaps.length) return null;
-    if (heatmapSel === "all") return combineHeatmaps(data.heatmaps.map((h) => h.intensities));
-    return data.heatmaps.find((h) => h.match_player_id === heatmapSel)?.intensities ?? null;
-  }, [data, heatmapSel]);
 
   if (error) {
     return (
@@ -165,104 +147,53 @@ export default function PlayerView({ playerId }: { playerId: string }) {
       </main>
     );
   }
-  if (!data || !totals) {
+  if (!data) {
     return <p className="px-6 py-12 text-[#AEB5C0]">Loading player…</p>;
   }
 
   const { profile } = data;
-  const appearanceLabel = (id: string) => {
-    const a = data.appearances.find((x) => x.id === id);
-    return a ? `vs ${a.match?.opponent || "Unknown"} · ${formatDate(a.match?.match_date)}` : "Match";
-  };
+  const age = ageFrom(profile.date_of_birth);
+  const card = "rounded-xl border border-[#353941] bg-[#1D2025] p-5";
+  const cardTitle = "text-sm font-bold uppercase tracking-wide text-[#D8DCE2]";
 
   return (
     <main className="text-white">
-      <div className="mx-auto max-w-6xl px-6 py-12">
-        <Link href="/scout" className="text-sm text-[#AEB5C0] hover:text-[#F47721]">
-          ← Back to discovery
-        </Link>
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        <PlayerBoard
+          profile={profile}
+          clubs={data.clubs}
+          appearances={data.appearances}
+          heatmaps={data.heatmaps}
+          breadcrumb={
+            <>
+              <Link href="/scout" className="hover:text-[#F47721]">
+                Discover players
+              </Link>{" "}
+              / <span className="font-semibold text-white">{profile.display_name || "Player"}</span>
+            </>
+          }
+          action={
+            <a href="#contact" className={`${ui.button} text-center`}>
+              Request full profile
+            </a>
+          }
+        />
 
-        <section className="mt-6 flex flex-wrap items-center gap-5">
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#F47721]/15 text-3xl font-black text-[#F47721]">
-            {(profile.display_name || "?").charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <p className={ui.eyebrow}>Player profile</p>
-            <h1 className="mt-1 text-4xl font-black">{profile.display_name || "Unnamed player"}</h1>
-            <p className="mt-2 text-[#AEB5C0]">
-              {[
-                ageFrom(profile.date_of_birth) !== null ? `Age ${ageFrom(profile.date_of_birth)}` : null,
-                profile.position,
-                profile.county,
-              ]
-                .filter(Boolean)
-                .join(" · ") || "Position and county not provided"}
-            </p>
-          </div>
-        </section>
-
-        <section className="mt-10">
-          <h2 className="mb-4 text-xl font-bold">Performance summary</h2>
-          <StatGrid totals={totals} />
-          <p className="mt-3 text-xs text-[#AEB5C0]">
-            Self-reported unless marked otherwise. Use alongside footage and your own
-            assessment.
-          </p>
-        </section>
-
-        <div className="mt-10 grid gap-8 lg:grid-cols-[1.3fr_1fr]">
-          <section className={ui.card}>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-xl font-bold">Activity heatmap</h2>
-              {data.heatmaps.length > 0 && (
-                <select
-                  aria-label="Heatmap match"
-                  value={heatmapSel}
-                  onChange={(e) => setHeatmapSel(e.target.value)}
-                  className="rounded-lg border border-[#454A54] bg-[#17191D] px-3 py-2 text-sm"
-                >
-                  <option value="all">All analysed matches ({data.heatmaps.length})</option>
-                  {data.heatmaps.map((h) => (
-                    <option key={h.id} value={h.match_player_id}>
-                      {appearanceLabel(h.match_player_id)}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-            <div className="mt-5">
-              {heatmapGrid ? (
-                <Heatmap intensities={heatmapGrid} />
-              ) : (
-                <div className={ui.empty}>No analysed footage yet, so there&apos;s no heatmap.</div>
-              )}
-            </div>
-          </section>
-
-          <ContactPanel
-            playerId={playerId}
-            scoutId={scoutId!}
-            playerName={profile.display_name || "this player"}
-            isMinor={(ageFrom(profile.date_of_birth) ?? 99) < 18}
-            requests={data.requests}
-            onSent={(r) => setData((d) => (d ? { ...d, requests: [r, ...d.requests] } : d))}
-          />
-        </div>
-
-        <section className="mt-10">
-          <h2 className="mb-4 text-xl font-bold">Match footage</h2>
+        {/* Footage */}
+        <section className="mt-6">
+          <h2 className={`${cardTitle} mb-3`}>Match footage</h2>
           {data.videos.length === 0 ? (
             <div className={ui.empty}>No videos uploaded.</div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {data.videos.map((v) => (
-                <article key={v.id} className={ui.card}>
+                <article key={v.id} className={card}>
                   {v.url ? (
-                    <video src={v.url} controls preload="metadata" className="w-full rounded-lg bg-black" />
+                    <video src={v.url} controls preload="metadata" playsInline className="w-full rounded-lg bg-black" />
                   ) : (
                     <div className={ui.empty}>Video unavailable</div>
                   )}
-                  <h3 className="mt-4 font-bold">{v.title}</h3>
+                  <h3 className="mt-3 font-bold">{v.title}</h3>
                   <p className="mt-1 text-xs text-[#AEB5C0]">Uploaded {formatDate(v.created_at)}</p>
                   {v.description && <p className="mt-2 text-sm text-[#AEB5C0]">{v.description}</p>}
                 </article>
@@ -271,67 +202,15 @@ export default function PlayerView({ playerId }: { playerId: string }) {
           )}
         </section>
 
-        <div className="mt-10 grid gap-8 lg:grid-cols-2">
-          <section>
-            <h2 className="mb-4 text-xl font-bold">Recent matches</h2>
-            {data.appearances.length === 0 ? (
-              <div className={ui.empty}>No matches logged.</div>
-            ) : (
-              <div className="overflow-x-auto rounded-xl border border-[#353941]">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-[#1D2025] text-xs uppercase text-[#AEB5C0]">
-                    <tr>
-                      <th className="px-4 py-3">Match</th>
-                      <th className="px-4 py-3">Score</th>
-                      <th className="px-4 py-3 text-right">Min</th>
-                      <th className="px-4 py-3 text-right">G</th>
-                      <th className="px-4 py-3 text-right">A</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.appearances.slice(0, 10).map((a) => (
-                      <tr key={a.id} className="border-t border-[#353941] bg-[#22252B]">
-                        <td className="px-4 py-3">
-                          <p className="font-medium">vs {a.match?.opponent || "Unknown"}</p>
-                          <p className="text-xs text-[#AEB5C0]">{formatDate(a.match?.match_date)}</p>
-                        </td>
-                        <td className="px-4 py-3">
-                          {a.match?.team_goals ?? "–"}–{a.match?.opponent_goals ?? "–"}
-                        </td>
-                        <td className="px-4 py-3 text-right">{a.minutes_played ?? "–"}</td>
-                        <td className="px-4 py-3 text-right">{a.stat?.goals ?? "–"}</td>
-                        <td className="px-4 py-3 text-right">{a.stat?.assists ?? "–"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          <section>
-            <h2 className="mb-4 text-xl font-bold">Club history</h2>
-            {data.clubs.length === 0 ? (
-              <div className={ui.empty}>No clubs listed.</div>
-            ) : (
-              <div className="space-y-3">
-                {data.clubs.map((c) => (
-                  <div key={c.id} className="rounded-xl border border-[#353941] bg-[#22252B] p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-bold">{c.club_name}</p>
-                      {c.is_current && (
-                        <span className="text-xs font-bold text-[#F47721]">CURRENT</span>
-                      )}
-                    </div>
-                    <p className="mt-1 text-sm text-[#AEB5C0]">
-                      {c.league_or_division || "League not specified"}
-                    </p>
-                    {c.achievement && <p className="mt-2 text-sm">{c.achievement}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+        <div id="contact" className="mt-6 scroll-mt-20 lg:max-w-2xl">
+          <ContactPanel
+            playerId={playerId}
+            scoutId={scoutId!}
+            playerName={profile.display_name || "this player"}
+            isMinor={(age ?? 99) < 18}
+            requests={data.requests}
+            onSent={(r) => setData((d) => (d ? { ...d, requests: [r, ...d.requests] } : d))}
+          />
         </div>
       </div>
     </main>
@@ -404,7 +283,7 @@ function ContactPanel({
 
   return (
     <section className={`${ui.card} h-fit`}>
-      <h2 className="text-xl font-bold">Contact {playerName}</h2>
+      <h2 className="text-xl font-bold">Request full profile</h2>
 
       {request ? (
         <div className="mt-4 space-y-4 text-sm">
@@ -450,8 +329,8 @@ function ContactPanel({
       ) : (
         <form onSubmit={send} className="mt-4 space-y-4">
           <p className="text-sm text-[#AEB5C0]">
-            Introduce yourself and your organisation. The player decides whether to accept
-            and share their contact details. You can send one request per player.
+            Contact details stay hidden until {playerName} accepts. Introduce yourself and
+            your organisation, and propose a meeting if you like. One request per player.
           </p>
           {isMinor && (
             <p className="rounded-lg border border-[#F47721]/40 bg-[#F47721]/10 p-3 text-xs text-[#F47721]">
@@ -493,7 +372,7 @@ function ContactPanel({
           </div>
           {error && <p className={ui.error}>{error}</p>}
           <button type="submit" disabled={sending} className={`${ui.button} w-full`}>
-            {sending ? "Sending…" : "Send contact request"}
+            {sending ? "Sending…" : "Request full profile"}
           </button>
         </form>
       )}

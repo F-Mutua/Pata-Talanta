@@ -1,5 +1,4 @@
-
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -42,7 +41,7 @@ type BackendMatch = {
     performance_stats_id: string | null;
     goals: number | null;
     assists: number | null;
-  };
+  } | null;
 };
 
 type MatchesResponse = {
@@ -65,6 +64,23 @@ type SubmitMatchResponse = {
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+const statFields = [
+  ["goals", "Goals"],
+  ["assists", "Assists"],
+  ["shots", "Shots"],
+  ["shots_on_target", "Shots on target"],
+  ["passes_completed", "Passes completed"],
+  ["passes_attempted", "Passes attempted"],
+  ["tackles", "Tackles"],
+  ["interceptions", "Interceptions"],
+] as const;
+
+type StatKey = (typeof statFields)[number][0];
+
+const emptyStats = Object.fromEntries(
+  statFields.map(([key]) => [key, ""])
+) as Record<StatKey, string>;
 
 async function getResponseError(response: Response): Promise<string> {
   try {
@@ -104,6 +120,7 @@ export default function MatchesPage() {
   const [teamGoals, setTeamGoals] = useState("");
   const [opponentGoals, setOpponentGoals] = useState("");
   const [minutesPlayed, setMinutesPlayed] = useState("");
+  const [stats, setStats] = useState<Record<StatKey, string>>(emptyStats);
   const [notes, setNotes] = useState("");
 
   // Retrieve the current Supabase session token.
@@ -113,7 +130,9 @@ export default function MatchesPage() {
       error: authError,
     } = await supabase.auth.getSession();
 
-    if (authError) throw authError;
+    if (authError) {
+      throw authError;
+    }
 
     if (!session) {
       router.push("/login");
@@ -215,6 +234,38 @@ export default function MatchesPage() {
       { name: "Minutes played", value: minutesPlayed },
     ];
 
+    for (const [key, label] of statFields) {
+      numericFields.push({
+        name: label,
+        value: stats[key],
+      });
+    }
+
+    const n = (value: string): number | null =>
+      value === "" ? null : Number(value);
+
+    // Validate shots and shots on target.
+    const totalShots = Number(stats.shots || 0);
+    const shotsOnTarget = Number(stats.shots_on_target || 0);
+
+    if (shotsOnTarget > totalShots) {
+      setError("Shots on target cannot be more than total shots.");
+      return;
+    }
+
+    // Validate completed and attempted passes when both are supplied.
+    if (
+      n(stats.passes_attempted) !== null &&
+      n(stats.passes_completed) !== null &&
+      n(stats.passes_completed)! > n(stats.passes_attempted)!
+    ) {
+      setError(
+        "Completed passes cannot be more than attempted passes."
+      );
+      return;
+    }
+
+    // Validate all numeric fields.
     for (const field of numericFields) {
       if (
         field.value !== "" &&
@@ -241,9 +292,9 @@ export default function MatchesPage() {
     try {
       const accessToken = await getAccessToken();
 
-      // Submit the match to FastAPI.
-      // The backend assigns the authenticated user's ID
-      // and saves related records in one transaction.
+      // Submit the match and its performance statistics to FastAPI.
+      // The backend assigns the authenticated user's ID and saves
+      // all related records in one transaction.
       const response = await fetch(`${API_URL}/matches`, {
         method: "POST",
         headers: {
@@ -265,6 +316,16 @@ export default function MatchesPage() {
           minutes_played:
             minutesPlayed === "" ? 0 : Number(minutesPlayed),
           started: false,
+          performance_stats: {
+            goals: Number(stats.goals || 0),
+            assists: Number(stats.assists || 0),
+            shots: Number(stats.shots || 0),
+            shots_on_target: Number(stats.shots_on_target || 0),
+            passes_completed: n(stats.passes_completed),
+            passes_attempted: n(stats.passes_attempted),
+            tackles: Number(stats.tackles || 0),
+            interceptions: Number(stats.interceptions || 0),
+          },
         }),
       });
 
@@ -280,7 +341,7 @@ export default function MatchesPage() {
         );
       }
 
-      // The backend has confirmed that the match was saved.
+      // The backend has confirmed that the match and statistics were saved.
       setSuccess("Match saved successfully!");
 
       // Clear the form after confirmed submission.
@@ -293,6 +354,7 @@ export default function MatchesPage() {
       setTeamGoals("");
       setOpponentGoals("");
       setMinutesPlayed("");
+      setStats(emptyStats);
       setNotes("");
 
       // Refresh match history separately.
@@ -300,7 +362,10 @@ export default function MatchesPage() {
       try {
         await loadMatches();
       } catch (refreshError) {
-        console.error("Match history refresh error:", refreshError);
+        console.error(
+          "Match history refresh error:",
+          refreshError
+        );
 
         setError(
           "Your match was saved, but match history could not refresh. Reload the page to see it."
@@ -320,24 +385,24 @@ export default function MatchesPage() {
   }
 
   return (
-    <main className="min-h-screen bg-black px-4 py-10 text-white sm:px-8">
+    <main className="px-4 py-10 text-white sm:px-8">
       <div className="mx-auto max-w-5xl">
         <Link
           href="/dashboard"
-          className="mb-6 inline-block text-sm text-orange-500 hover:text-orange-400"
+          className="mb-6 inline-block text-sm text-[#F47721] hover:text-[#DB6418]"
         >
           ← Back to Dashboard
         </Link>
 
         <h1 className="text-3xl font-bold">
-          Match <span className="text-orange-500">History</span>
+          Match <span className="text-[#F47721]">History</span>
         </h1>
 
-        <p className="mt-2 text-gray-400">
+        <p className="mt-2 text-[#AEB5C0]">
           Record your matches and build your football journey.
         </p>
 
-        <section className="mt-8 rounded-xl border border-gray-800 bg-gray-950 p-5 sm:p-7">
+        <section className="mt-8 rounded-xl border border-[#353941] bg-[#22252B] p-5 sm:p-7">
           <h2 className="mb-6 text-xl font-semibold">
             Record a Match
           </h2>
@@ -345,19 +410,19 @@ export default function MatchesPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="grid gap-5 sm:grid-cols-2">
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Club represented
                 </label>
                 <input
                   value={clubName}
                   onChange={(e) => setClubName(e.target.value)}
                   placeholder="Your club name"
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Opponent *
                 </label>
                 <input
@@ -365,24 +430,24 @@ export default function MatchesPage() {
                   value={opponent}
                   onChange={(e) => setOpponent(e.target.value)}
                   placeholder="Opponent team"
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Competition
                 </label>
                 <input
                   value={competition}
                   onChange={(e) => setCompetition(e.target.value)}
                   placeholder="League, tournament, friendly..."
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Match date *
                 </label>
                 <input
@@ -391,30 +456,30 @@ export default function MatchesPage() {
                   value={matchDate}
                   onChange={(e) => setMatchDate(e.target.value)}
                   max={new Date().toISOString().split("T")[0]}
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Venue
                 </label>
                 <input
                   value={venue}
                   onChange={(e) => setVenue(e.target.value)}
                   placeholder="Where was the match played?"
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Match type
                 </label>
                 <select
                   value={matchType}
                   onChange={(e) => setMatchType(e.target.value)}
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 >
                   <option value="home">Home</option>
                   <option value="away">Away</option>
@@ -423,7 +488,7 @@ export default function MatchesPage() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Your team&apos;s goals
                 </label>
                 <input
@@ -433,12 +498,12 @@ export default function MatchesPage() {
                   value={teamGoals}
                   onChange={(e) => setTeamGoals(e.target.value)}
                   placeholder="0"
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Opponent&apos;s goals
                 </label>
                 <input
@@ -448,12 +513,12 @@ export default function MatchesPage() {
                   value={opponentGoals}
                   onChange={(e) => setOpponentGoals(e.target.value)}
                   placeholder="0"
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
 
               <div>
-                <label className="mb-2 block text-sm text-gray-300">
+                <label className="mb-2 block text-sm text-[#D8DCE2]">
                   Minutes played
                 </label>
                 <input
@@ -464,32 +529,77 @@ export default function MatchesPage() {
                   value={minutesPlayed}
                   onChange={(e) => setMinutesPlayed(e.target.value)}
                   placeholder="90"
-                  className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
                 />
               </div>
             </div>
 
+            <fieldset>
+              <legend className="mb-1 text-sm font-semibold text-white">
+                Your stats{" "}
+                <span className="font-normal text-[#AEB5C0]">
+                  (optional)
+                </span>
+              </legend>
+
+              <p className="mb-3 text-xs text-[#AEB5C0]">
+                Leave blank anything you didn&apos;t track. Video analysis
+                can add distance, speed and sprints later.
+              </p>
+
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {statFields.map(([key, label]) => (
+                  <div key={key}>
+                    <label
+                      htmlFor={`stat-${key}`}
+                      className="mb-2 block text-sm text-[#D8DCE2]"
+                    >
+                      {label}
+                    </label>
+
+                    <input
+                      id={`stat-${key}`}
+                      type="number"
+                      inputMode="numeric"
+                      min="0"
+                      step="1"
+                      value={stats[key]}
+                      onChange={(e) =>
+                        setStats((prev) => ({
+                          ...prev,
+                          [key]: e.target.value,
+                        }))
+                      }
+                      placeholder="0"
+                      className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
+                    />
+                  </div>
+                ))}
+              </div>
+            </fieldset>
+
             <div>
-              <label className="mb-2 block text-sm text-gray-300">
+              <label className="mb-2 block text-sm text-[#D8DCE2]">
                 Match notes
               </label>
+
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
                 placeholder="Describe your performance or important moments..."
-                className="w-full rounded-lg border border-gray-700 bg-black p-3 text-white outline-none focus:border-orange-500"
+                className="w-full rounded-lg border border-[#454A54] bg-[#17191D] p-3 text-white outline-none focus:border-[#F47721]"
               />
             </div>
 
             {error && (
-              <p className="rounded-lg border border-red-800 bg-red-950 p-3 text-sm text-red-300">
+              <p className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
                 {error}
               </p>
             )}
 
             {success && (
-              <p className="rounded-lg border border-orange-800 bg-orange-950 p-3 text-sm text-orange-300">
+              <p className="rounded-lg border border-green-500/40 bg-green-500/10 p-3 text-sm text-green-300">
                 {success}
               </p>
             )}
@@ -497,7 +607,7 @@ export default function MatchesPage() {
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-orange-500 px-6 py-3 font-semibold text-black transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg bg-[#F47721] px-6 py-3 font-bold text-white transition hover:bg-[#DB6418] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {saving ? "Saving..." : "Save Match"}
             </button>
@@ -510,9 +620,11 @@ export default function MatchesPage() {
           </h2>
 
           {loading ? (
-            <p className="text-gray-400">Loading matches...</p>
+            <p className="text-[#AEB5C0]">
+              Loading matches...
+            </p>
           ) : matches.length === 0 ? (
-            <div className="rounded-xl border border-gray-800 bg-gray-950 p-6 text-gray-400">
+            <div className="rounded-xl border border-[#353941] bg-[#22252B] p-6 text-[#AEB5C0]">
               No matches recorded yet. Add your first match above.
             </div>
           ) : (
@@ -520,7 +632,7 @@ export default function MatchesPage() {
               {matches.map((match) => (
                 <article
                   key={match.id}
-                  className="rounded-xl border border-gray-800 bg-gray-950 p-5"
+                  className="rounded-xl border border-[#353941] bg-[#22252B] p-5"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
@@ -529,41 +641,42 @@ export default function MatchesPage() {
                         {match.opponent || "Opponent not specified"}
                       </h3>
 
-                      <p className="mt-1 text-sm text-gray-400">
+                      <p className="mt-1 text-sm text-[#AEB5C0]">
                         {match.competition || "Competition not specified"}
                       </p>
                     </div>
 
-                    <span className="rounded-full bg-orange-500/10 px-3 py-1 text-xs font-semibold capitalize text-orange-400">
+                    <span className="rounded-full bg-[#F47721]/15 px-3 py-1 text-xs font-semibold capitalize text-[#F47721]">
                       {match.match_type || "Match"}
                     </span>
                   </div>
 
-                  <div className="mt-4 grid gap-3 text-sm text-gray-300 sm:grid-cols-3">
+                  <div className="mt-4 grid gap-3 text-sm text-[#D8DCE2] sm:grid-cols-3">
                     <p>
-                      <span className="text-gray-500">Date:</span>{" "}
+                      <span className="text-[#AEB5C0]">Date:</span>{" "}
                       {match.match_date}
                     </p>
 
                     <p>
-                      <span className="text-gray-500">Score:</span>{" "}
-                      {match.team_goals ?? "-"} - {match.opponent_goals ?? "-"}
+                      <span className="text-[#AEB5C0]">Score:</span>{" "}
+                      {match.team_goals ?? "-"} -{" "}
+                      {match.opponent_goals ?? "-"}
                     </p>
 
                     <p>
-                      <span className="text-gray-500">Minutes:</span>{" "}
+                      <span className="text-[#AEB5C0]">Minutes:</span>{" "}
                       {match.minutes_played ?? "-"}
                     </p>
                   </div>
 
                   {match.venue && (
-                    <p className="mt-3 text-sm text-gray-400">
+                    <p className="mt-3 text-sm text-[#AEB5C0]">
                       Venue: {match.venue}
                     </p>
                   )}
 
                   {match.notes && (
-                    <p className="mt-3 text-sm text-gray-400">
+                    <p className="mt-3 text-sm text-[#AEB5C0]">
                       {match.notes}
                     </p>
                   )}

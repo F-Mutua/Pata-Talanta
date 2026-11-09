@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+import { uploadWithProgress } from "@/lib/upload";
 import { ui, formatDate, errorMessage } from "@/lib/ui";
 import {
   MAX_VIDEO_BYTES,
@@ -27,12 +30,14 @@ function formatSize(bytes: number | null) {
 
 export default function VideosPage() {
   const supabase = createClient();
+  const router = useRouter();
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [videos, setVideos] = useState<MatchVideo[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [previewUrl, setPreviewUrl] = useState<{ id: string; url: string } | null>(null);
@@ -113,6 +118,7 @@ export default function VideosPage() {
     if (!title.trim()) return setError("Please give the video a title.");
 
     setUploading(true);
+    setProgress(0);
     let storagePath = "";
     try {
       const {
@@ -124,32 +130,25 @@ export default function VideosPage() {
       const ext = file.name.split(".").pop()?.toLowerCase() || "mp4";
       storagePath = `${user.id}/${crypto.randomUUID()}.${ext}`;
 
-      const { error: upErr } = await supabase.storage
-        .from(VIDEO_BUCKET)
-        .upload(storagePath, file, { contentType: file.type, upsert: false });
-      if (upErr) throw upErr;
+      await uploadWithProgress(VIDEO_BUCKET, storagePath, file, setProgress);
 
-      const { error: insErr } = await supabase.from("match_videos").insert({
+      const { data: created, error: insErr } = await supabase.from("match_videos").insert({
         player_id: user.id,
         match_id: matchId || null,
         title: title.trim(),
         description: description.trim() || null,
         storage_path: storagePath,
         file_size_bytes: file.size,
-      });
-      if (insErr) {
+      }).select("id").single();
+      if (insErr || !created) {
         // Don't leave an orphaned file behind if the record fails.
         await supabase.storage.from(VIDEO_BUCKET).remove([storagePath]);
-        throw insErr;
+        throw insErr ?? new Error("The video record could not be created.");
       }
 
-      setSuccess("Video uploaded. It will be queued for analysis.");
-      setFile(null);
-      setTitle("");
-      setMatchId("");
-      setDescription("");
-      if (fileInput.current) fileInput.current.value = "";
-      await load();
+      // Straight on to "tap yourself" and analysis.
+      router.push(`/dashboard/videos/${created.id}`);
+      return;
     } catch (err) {
       setError(errorMessage(err, "The upload failed. Please try again."));
     } finally {
@@ -277,8 +276,25 @@ export default function VideosPage() {
               {success && <p className={ui.success}>{success}</p>}
 
               <button type="submit" disabled={uploading || !file} className={`${ui.button} w-full`}>
-                {uploading ? "Uploading… keep this page open" : "Upload video"}
+                {uploading
+                  ? `Uploading… ${Math.round(progress * 100)}%`
+                  : "Upload and analyse"}
               </button>
+              {uploading && (
+                <div
+                  className="h-2 overflow-hidden rounded-full bg-[#353941]"
+                  role="progressbar"
+                  aria-valuenow={Math.round(progress * 100)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label="Upload progress"
+                >
+                  <div
+                    className="h-full rounded-full bg-[#F47721] transition-[width]"
+                    style={{ width: `${progress * 100}%` }}
+                  />
+                </div>
+              )}
             </form>
           </section>
 
@@ -326,7 +342,10 @@ export default function VideosPage() {
                         />
                       )}
 
-                      <div className="mt-4 flex gap-3">
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <Link href={`/dashboard/videos/${v.id}`} className={ui.button + " !px-4 !py-2 text-sm"}>
+                          {v.processing_status === "processed" ? "View results" : "Analyse"}
+                        </Link>
                         <button onClick={() => preview(v)} className={ui.buttonGhost}>
                           {previewUrl?.id === v.id ? "Hide" : "Watch"}
                         </button>

@@ -6,6 +6,7 @@ import { createClient } from "@/utils/supabase/client";
 import { useScout } from "@/lib/useScout";
 import { ui, errorMessage } from "@/lib/ui";
 import { ageFrom, type PlayerProfile } from "@/lib/types";
+import { talentScore, TALENT_SCORE_EXPLAINER } from "@/lib/stats";
 
 type PlayerCard = PlayerProfile & {
   age: number | null;
@@ -13,10 +14,13 @@ type PlayerCard = PlayerProfile & {
   minutes: number;
   goals: number;
   assists: number;
+  defensive: number;
+  videoMatches: number;
   videos: number;
+  score: number;
 };
 
-type SortKey = "contributions" | "matches" | "minutes" | "name";
+type SortKey = "score" | "contributions" | "matches" | "minutes" | "name";
 
 export default function ScoutDashboard() {
   const scoutId = useScout();
@@ -32,7 +36,8 @@ export default function ScoutDashboard() {
   const [position, setPosition] = useState("");
   const [minMatches, setMinMatches] = useState(0);
   const [videoOnly, setVideoOnly] = useState(false);
-  const [sort, setSort] = useState<SortKey>("contributions");
+  const [sort, setSort] = useState<SortKey>("score");
+  const [view, setView] = useState<"featured" | "all">("featured");
 
   useEffect(() => {
     if (!scoutId) return;
@@ -43,7 +48,7 @@ export default function ScoutDashboard() {
         // the intent explicit.
         const { data: profiles, error: pErr } = await supabase
           .from("profiles")
-          .select("id, display_name, county, position, role, date_of_birth, discoverable, guardian_consent, consent_at")
+          .select("*")
           .eq("role", "player")
           .eq("discoverable", true)
           .limit(500);
@@ -80,15 +85,16 @@ export default function ScoutDashboard() {
         const { data: stats, error: sErr } = appIds.length
           ? await supabase
               .from("performance_stats")
-              .select("match_player_id, goals, assists")
+              .select("match_player_id, goals, assists, tackles, interceptions, data_source")
               .in("match_player_id", appIds)
           : { data: [], error: null };
         if (sErr) throw sErr;
 
         const appOwner = new Map(appearances.map((a) => [a.id, a.player_id]));
-        const agg = new Map<string, Omit<PlayerCard, keyof PlayerProfile | "age">>();
+        const agg = new Map<string, Omit<PlayerCard, keyof PlayerProfile | "age" | "score">>();
         const get = (id: string) => {
-          if (!agg.has(id)) agg.set(id, { matches: 0, minutes: 0, goals: 0, assists: 0, videos: 0 });
+          if (!agg.has(id))
+            agg.set(id, { matches: 0, minutes: 0, goals: 0, assists: 0, defensive: 0, videoMatches: 0, videos: 0 });
           return agg.get(id)!;
         };
         for (const a of appearances) {
@@ -102,11 +108,18 @@ export default function ScoutDashboard() {
           const g = get(owner);
           g.goals += s.goals || 0;
           g.assists += s.assists || 0;
+          g.defensive += (s.tackles || 0) + (s.interceptions || 0);
+          if (String(s.data_source || "").includes("video")) g.videoMatches += 1;
         }
         // match_videos may not exist yet; treat that as "no videos".
         for (const v of vids.error ? [] : vids.data || []) get(v.player_id).videos += 1;
 
-        setPlayers((profiles || []).map((p) => ({ ...p, ...get(p.id), age: ageFrom(p.date_of_birth) })));
+        setPlayers(
+          (profiles || []).map((p) => {
+            const a = get(p.id);
+            return { ...p, ...a, age: ageFrom(p.date_of_birth), score: talentScore(a) };
+          })
+        );
         setPending(reqs.count || 0);
         // Most recent view per player, newest first.
         const seen = new Set<string>();
@@ -146,14 +159,31 @@ export default function ScoutDashboard() {
         return p.age >= lo && p.age <= hi;
       })
       .filter((p) => p.matches >= minMatches)
-      .filter((p) => !videoOnly || p.videos > 0)
+      .filter((p) => !videoOnly || p.videos > 0 || p.videoMatches > 0)
       .sort((a, b) => {
         if (sort === "name") return (a.display_name || "").localeCompare(b.display_name || "");
         if (sort === "matches") return b.matches - a.matches;
         if (sort === "minutes") return b.minutes - a.minutes;
-        return b.goals + b.assists - (a.goals + a.assists);
+        if (sort === "contributions") return b.goals + b.assists - (a.goals + a.assists);
+        return b.score - a.score;
       });
   }, [players, query, county, position, ageBand, minMatches, videoOnly, sort]);
+
+  // Re-ranks whenever the filters change.
+  const topPicks = useMemo(
+    () => [...filtered].filter((p) => p.matches > 0).sort((a, b) => b.score - a.score).slice(0, 3),
+    [filtered]
+  );
+
+  const totals = useMemo(
+    () => [
+      { label: "Players visible", value: players.length },
+      { label: "Matches logged", value: players.reduce((t, p) => t + p.matches, 0) },
+      { label: "Matches analysed from video", value: players.reduce((t, p) => t + p.videoMatches, 0) },
+      { label: "Counties", value: new Set(players.map((p) => p.county?.trim()).filter(Boolean)).size },
+    ],
+    [players]
+  );
 
   const recentPlayers = recent
     .map((id) => players.find((p) => p.id === id))
@@ -168,13 +198,53 @@ export default function ScoutDashboard() {
     setVideoOnly(false);
   };
 
+  const byScore = useMemo(
+    () => [...players].filter((p) => p.matches > 0).sort((a, b) => b.score - a.score),
+    [players]
+  );
+  const rows: { key: string; title: string; hint: string; players: PlayerCard[]; viewAll: () => void }[] = [
+    {
+      key: "top",
+      title: "Top rated",
+      hint: "Highest talent score",
+      players: byScore.slice(0, 3),
+      viewAll: () => {
+        resetFilters();
+        setSort("score");
+      },
+    },
+    {
+      key: "u18",
+      title: "Rising talent · under 18",
+      hint: "Best young players",
+      players: byScore.filter((p) => p.age !== null && p.age < 18).slice(0, 3),
+      viewAll: () => {
+        resetFilters();
+        setAgeBand("0-17");
+        setSort("score");
+      },
+    },
+    {
+      key: "video",
+      title: "Analysed from video",
+      hint: "Heatmaps and movement data",
+      players: byScore.filter((p) => p.videoMatches > 0 || p.videos > 0).slice(0, 3),
+      viewAll: () => {
+        resetFilters();
+        setVideoOnly(true);
+        setSort("score");
+      },
+    },
+  ];
+
+
   if (!scoutId) {
     return <p className="px-6 py-12 text-[#AEB5C0]">Checking your account…</p>;
   }
 
   return (
     <main className="text-white">
-      <div className="mx-auto max-w-7xl px-6 py-12">
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className={ui.eyebrow}>Scout dashboard</p>
@@ -189,7 +259,91 @@ export default function ScoutDashboard() {
           </Link>
         </div>
 
-        {/* Filters: one row above the results */}
+        <section className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4" aria-label="Totals">
+          {totals.map((t) => (
+            <div key={t.label} className="rounded-xl border border-[#353941] bg-[#22252B] p-4 sm:p-5">
+              <p className="text-xs text-[#AEB5C0] sm:text-sm">{t.label}</p>
+              <p className="mt-1 text-2xl font-black">{loading ? "–" : t.value}</p>
+            </div>
+          ))}
+        </section>
+
+        <div className="mt-8 flex gap-6 border-b border-[#353941]" role="tablist" aria-label="Scout views">
+          {(
+            [
+              ["featured", "Featured players"],
+              ["all", `All players${loading ? "" : ` (${players.length})`}`],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={view === key}
+              onClick={() => setView(key)}
+              className={`-mb-px border-b-2 pb-3 text-sm font-semibold transition ${
+                view === key ? "border-[#F47721] text-white" : "border-transparent text-[#AEB5C0] hover:text-white"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {error && <p className={`${ui.error} mt-6`}>{error}</p>}
+
+        {!loading && players.length === 0 && (
+          <div className={`${ui.empty} mt-8`}>
+            <p className="font-semibold text-white">No players are visible to scouts yet</p>
+            <p className="mx-auto mt-2 max-w-md text-sm">
+              Players appear here once they turn on &ldquo;Let scouts find me&rdquo; in their profile.
+              For the demo, run docs/seed-demo-data.sql in Supabase to add 30 example players.
+            </p>
+          </div>
+        )}
+
+        {view === "featured" && players.length > 0 && (
+          <div className="mt-6 space-y-8">
+            {[...rows, ...(recentPlayers.length ? [{ key: "recent", title: "Recently viewed", hint: "Players you opened", players: recentPlayers.slice(0, 3), viewAll: () => resetFilters() }] : [])]
+              .filter((r) => r.players.length > 0)
+              .map((r) => (
+                <section key={r.key} aria-labelledby={`row-${r.key}`}>
+                  <div className="mb-3 flex items-baseline justify-between gap-3">
+                    <h2 id={`row-${r.key}`} className="text-sm font-bold uppercase tracking-wide text-[#D8DCE2]">
+                      {r.title} <span className="ml-2 font-normal normal-case tracking-normal text-[#AEB5C0]">{r.hint}</span>
+                    </h2>
+                    <button
+                      onClick={() => {
+                        r.viewAll();
+                        setView("all");
+                      }}
+                      className="shrink-0 text-xs font-bold uppercase tracking-wide text-[#F47721] hover:underline"
+                    >
+                      View all →
+                    </button>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {r.players.map((p) => (
+                      <PlayerCardView key={p.id} p={p} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            <div className="text-center">
+              <button
+                onClick={() => {
+                  resetFilters();
+                  setView("all");
+                }}
+                className="text-sm font-bold uppercase tracking-wide text-[#F47721] hover:underline"
+              >
+                View all {players.length} players
+              </button>
+            </div>
+          </div>
+        )}
+
+        {view === "all" && players.length > 0 && (
+        <>
         {recentPlayers.length > 0 && (
           <section className="mt-10">
             <h2 className="text-sm font-bold uppercase tracking-wide text-[#AEB5C0]">Recently viewed</h2>
@@ -208,7 +362,27 @@ export default function ScoutDashboard() {
           </section>
         )}
 
-        <section className="mt-8 grid gap-3 rounded-xl border border-[#353941] bg-[#1D2025] p-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr]">
+        {positions.length > 0 && (
+          <div className="mt-8 flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Quick position filter">
+            {["", ...positions].map((pos) => (
+              <button
+                key={pos || "all"}
+                onClick={() => setPosition(pos)}
+                aria-pressed={position === pos}
+                className={`shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition ${
+                  position === pos
+                    ? "bg-[#F47721] text-white"
+                    : "border border-[#454A54] text-[#D8DCE2] hover:border-[#F47721]"
+                }`}
+              >
+                {pos || "All positions"}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Filters: one row above the results */}
+        <section className="mt-4 grid gap-3 rounded-xl border border-[#353941] bg-[#1D2025] p-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr]">
           <input
             aria-label="Search by name"
             value={query}
@@ -230,6 +404,7 @@ export default function ScoutDashboard() {
           </select>
           <select aria-label="Age" value={ageBand} onChange={(e) => setAgeBand(e.target.value)} className={ui.input}>
             <option value="">Any age</option>
+            <option value="0-17">Under 18</option>
             <option value="0-14">Under 15</option>
             <option value="15-17">15–17</option>
             <option value="18-20">18–20</option>
@@ -247,6 +422,7 @@ export default function ScoutDashboard() {
             <option value={10}>10+ matches</option>
           </select>
           <select aria-label="Sort by" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className={ui.input}>
+            <option value="score">Sort: talent score</option>
             <option value="contributions">Sort: goal contributions</option>
             <option value="matches">Sort: matches played</option>
             <option value="minutes">Sort: minutes played</option>
@@ -263,7 +439,40 @@ export default function ScoutDashboard() {
           </label>
         </section>
 
-        {error && <p className={`${ui.error} mt-6`}>{error}</p>}
+        {!loading && topPicks.length > 0 && (
+          <section className="mt-8 rounded-xl border border-[#F47721]/40 bg-[#F47721]/5 p-5">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-lg font-bold">Top players to watch</h2>
+              <p className="text-xs text-[#AEB5C0]">Ranked within your current filters</p>
+            </div>
+            <ol className="mt-4 grid gap-3 md:grid-cols-3">
+              {topPicks.map((p, i) => (
+                <li key={p.id}>
+                  <Link
+                    href={`/scout/players/${p.id}`}
+                    className="flex items-center gap-4 rounded-lg border border-[#353941] bg-[#22252B] p-4 transition hover:border-[#F47721]"
+                  >
+                    <span className="text-2xl font-black text-[#F47721]">{i + 1}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-bold">{p.display_name || "Unnamed player"}</span>
+                      <span className="block truncate text-xs text-[#AEB5C0]">
+                        {[p.position, p.county].filter(Boolean).join(" · ") || "Details not provided"}
+                      </span>
+                    </span>
+                    <span className="text-right">
+                      <span className="block text-xl font-black">{p.score}</span>
+                      <span className="block text-[10px] uppercase tracking-wide text-[#AEB5C0]">score</span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ol>
+            <details className="mt-3 text-xs text-[#AEB5C0]">
+              <summary className="cursor-pointer hover:text-white">How the score works</summary>
+              <p className="mt-2 leading-5">{TALENT_SCORE_EXPLAINER}</p>
+            </details>
+          </section>
+        )}
 
         <p className="mt-6 text-sm text-[#AEB5C0]" aria-live="polite">
           {loading ? "Loading players…" : `${filtered.length} of ${players.length} players`}
@@ -277,52 +486,110 @@ export default function ScoutDashboard() {
             </button>
           </div>
         ) : (
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filtered.map((p) => (
-              <Link
-                key={p.id}
-                href={`/scout/players/${p.id}`}
-                className="group rounded-xl border border-[#353941] bg-[#22252B] p-6 transition hover:border-[#F47721]"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F47721]/15 font-black text-[#F47721]">
-                      {(p.display_name || "?").charAt(0).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="truncate font-bold">{p.display_name || "Unnamed player"}</h3>
-                      <p className="truncate text-sm text-[#AEB5C0]">
-                        {[p.age !== null ? `Age ${p.age}` : null, p.position, p.county]
-                          .filter(Boolean)
-                          .join(" · ") || "Details not provided"}
-                      </p>
-                    </div>
-                  </div>
-                  {p.videos > 0 && (
-                    <span className="shrink-0 rounded-full bg-[#F47721]/15 px-2 py-1 text-[10px] font-bold uppercase text-[#F47721]">
-                      Video
-                    </span>
-                  )}
-                </div>
-
-                <dl className="mt-5 grid grid-cols-4 gap-2 border-t border-[#353941] pt-4 text-center">
-                  {[
-                    ["Apps", p.matches],
-                    ["Mins", p.minutes],
-                    ["Goals", p.goals],
-                    ["Assists", p.assists],
-                  ].map(([label, value]) => (
-                    <div key={label}>
-                      <dt className="text-[11px] uppercase tracking-wide text-[#AEB5C0]">{label}</dt>
-                      <dd className="mt-1 font-bold">{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </Link>
+              <PlayerCardView key={p.id} p={p} />
             ))}
           </div>
         )}
+        </>
+        )}
       </div>
     </main>
+  );
+}
+
+function PlayerCardView({ p }: { p: PlayerCard }) {
+  const rated = p.matches > 0;
+  const stars = Math.max(1, Math.min(5, Math.round(p.score / 20)));
+  return (
+    <Link
+      href={`/scout/players/${p.id}`}
+      className="group flex flex-col rounded-xl border border-[#353941] bg-[#22252B] p-5 transition hover:border-[#F47721]"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F47721]/15 font-black text-[#F47721]">
+            {(p.display_name || "?").charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-bold">{p.display_name || "Unnamed player"}</h3>
+            {p.is_demo && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-[#AEB5C0]">
+                Example data
+              </span>
+            )}
+          </div>
+        </div>
+        <span
+          className="text-lg text-[#AEB5C0] transition group-hover:translate-x-0.5 group-hover:text-[#F47721]"
+          aria-hidden="true"
+        >
+          ↗
+        </span>
+      </div>
+
+      {rated ? (
+        <p className="mt-3 flex gap-0.5 text-lg leading-none" aria-label={`Rated ${stars} of 5 from talent score`}>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <span key={i} className={i <= stars ? "text-[#F47721]" : "text-[#454A54]"} aria-hidden="true">
+              ★
+            </span>
+          ))}
+        </p>
+      ) : (
+        <p className="mt-3 text-xs text-[#AEB5C0]">Not rated yet · no matches logged</p>
+      )}
+
+      <div className="mt-4" title={TALENT_SCORE_EXPLAINER}>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-[#AEB5C0]">Talent score</span>
+          <span className="rounded bg-[#F47721]/15 px-2 py-0.5 font-bold text-[#F47721]">{p.score}</span>
+        </div>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#353941]">
+          <div className="h-full rounded-full bg-[#F47721]" style={{ width: `${p.score}%` }} />
+        </div>
+      </div>
+
+      <dl className="mt-4 space-y-2 text-xs">
+        {[
+          ["Position", p.position || "—"],
+          ["Age · County", [p.age !== null ? p.age : null, p.county].filter((x) => x !== null && x !== "").join(" · ") || "—"],
+        ].map(([label, value]) => (
+          <div key={String(label)} className="flex items-center justify-between gap-3">
+            <dt className="text-[#AEB5C0]">{label}:</dt>
+            <dd className="truncate rounded bg-[#17191D] px-2 py-0.5 font-semibold text-[#D8DCE2]">{value}</dd>
+          </div>
+        ))}
+        <div className="flex items-center justify-between gap-3">
+          <dt className="text-[#AEB5C0]">Footage:</dt>
+          <dd
+            className={`rounded px-2 py-0.5 font-semibold ${
+              p.videos > 0 || p.videoMatches > 0 ? "bg-[#F47721]/15 text-[#F47721]" : "bg-[#17191D] text-[#AEB5C0]"
+            }`}
+          >
+            {p.videos > 0
+              ? `${p.videos} video${p.videos === 1 ? "" : "s"}`
+              : p.videoMatches > 0
+                ? `${p.videoMatches} match${p.videoMatches === 1 ? "" : "es"} analysed`
+                : "None"}
+          </dd>
+        </div>
+      </dl>
+
+      <dl className="mt-4 grid grid-cols-4 gap-2 border-t border-[#353941] pt-4 text-center">
+        {[
+          ["Apps", p.matches],
+          ["Mins", p.minutes],
+          ["Goals", p.goals],
+          ["Assists", p.assists],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-[10px] uppercase tracking-wide text-[#AEB5C0]">{label}</dt>
+            <dd className="mt-1 font-bold">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </Link>
   );
 }

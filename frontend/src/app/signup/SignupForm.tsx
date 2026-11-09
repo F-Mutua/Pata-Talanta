@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import type { Role } from "@/lib/types";
 
@@ -14,6 +14,7 @@ const roles: { value: Role; title: string; description: string }[] = [
 
 export default function SignupForm() {
   const params = useSearchParams();
+  const router = useRouter();
   const [role, setRole] = useState<Role>(
     params.get("role") === "scout" ? "scout" : "player"
   );
@@ -45,29 +46,33 @@ export default function SignupForm() {
 
     try {
       const supabase = createClient();
+      // Scouts go to the scout dashboard; new players see the consent screen.
+      const home = role === "scout" ? "/scout" : "/welcome";
 
       const { data, error } = await supabase.auth.signUp({
-  email: email.trim(),
-  password,
-  options: {
-    emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
-    data: {
-      display_name: fullName.trim(),
-      // Read by the handle_new_user trigger (see docs/frontend-schema.sql).
-      role,
-    },
-  },
-});
+        email: email.trim(),
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${home}`,
+          data: {
+            display_name: fullName.trim(),
+            role,
+          },
+        },
+      });
 
       if (error) {
         setError(error.message);
       } else if (data.session) {
-        setMessage(
-          "Your account has been created successfully. You can now sign in."
-        );
+        // Email confirmation is off, so the user is already signed in.
+        router.push(home);
+        router.refresh();
+        return;
       } else {
         setMessage(
-          "Your signup was received. Please check your email for a confirmation link before signing in."
+          role === "scout"
+            ? "Check your email for a confirmation link. It will take you to the scout dashboard, where you can submit your verification details."
+            : "Your signup was received. Please check your email for a confirmation link before signing in."
         );
       }
     } catch {

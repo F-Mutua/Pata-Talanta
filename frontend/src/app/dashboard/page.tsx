@@ -1,102 +1,32 @@
-
 import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/server";
-
-const navigation = [
-  {
-    title: "My Player Profile",
-    description: "Manage your personal football information.",
-    href: "/dashboard/profile",
-    icon: "01",
-  },
-  {
-    title: "Club History",
-    description: "Record your current and previous clubs.",
-    href: "/dashboard/clubs",
-    icon: "02",
-  },
-  {
-    title: "Match History",
-    description: "Log the matches you have played in.",
-    href: "/dashboard/matches",
-    icon: "03",
-  },
-  {
-    title: "Performance",
-    description: "Record statistics and view your heatmaps.",
-    href: "/dashboard/performance",
-    icon: "04",
-  },
-  {
-    title: "Match Videos",
-    description: "Upload footage for analysis and for scouts to review.",
-    href: "/dashboard/videos",
-    icon: "05",
-  },
-  {
-    title: "Scout Requests",
-    description: "Respond to scouts who want to get in touch.",
-    href: "/dashboard/requests",
-    icon: "06",
-  },
-];
+import PlayerBoard, { type BoardAppearance } from "@/components/PlayerBoard";
+import type {
+  Club,
+  Heatmap as HeatmapRow,
+  Match,
+  MatchPlayer,
+  PerformanceStat,
+  PlayerProfile,
+} from "@/lib/types";
 
 export default function DashboardPage() {
   return (
     <main className="text-white">
-      <div className="mx-auto max-w-7xl px-6 py-12">
-        <Suspense
-          fallback={
-            <p className="text-[#AEB5C0]">Loading your dashboard...</p>
-          }
-        >
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+        {/* Session-dependent content streams in; reading cookies outside
+            Suspense is a build error with cacheComponents enabled. */}
+        <Suspense fallback={<p className="text-[#AEB5C0]">Loading your dashboard…</p>}>
           <DashboardContent />
         </Suspense>
 
-        <section className="mt-12">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#F47721]">
-            Your football journey
-          </p>
-          <h2 className="mt-2 text-2xl font-bold">
-            Manage your player career
-          </h2>
-
-          <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {navigation.map((item) => (
-              <Link
-                key={item.title}
-                href={item.href}
-                className="group rounded-xl border border-[#353941] bg-[#22252B] p-6 transition hover:border-[#F47721] hover:bg-[#282C33]"
-              >
-                <div className="flex items-start justify-between">
-                  <span className="text-sm font-black text-[#F47721]">
-                    {item.icon}
-                  </span>
-                  <span className="text-xl text-[#AEB5C0] transition group-hover:translate-x-1 group-hover:text-[#F47721]">
-                    →
-                  </span>
-                </div>
-
-                <h3 className="mt-6 text-xl font-bold">{item.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-[#AEB5C0]">
-                  {item.description}
-                </p>
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        <section className="mt-12 border-t border-[#353941] py-8">
-          <p className="text-sm font-bold tracking-widest text-[#F47721]">
-            BCF — BRINGING CHAMPIONS FORWARD
-          </p>
-          <p className="mt-2 text-sm text-[#AEB5C0]">
-            Pata Talanta. Look closer. Discover talent.
-          </p>
-        </section>
+        <p className="mt-10 border-t border-[#353941] pt-6 text-xs font-bold tracking-widest text-[#AEB5C0]">
+          <span className="text-[#F47721]">BCF</span> — BRINGING CHAMPIONS FORWARD · Pata Talanta.
+          Look closer. Discover talent.
+        </p>
       </div>
     </main>
   );
@@ -112,14 +42,20 @@ async function DashboardContent() {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser();
-
   if (authError || !user) redirect("/login");
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("display_name, role, county, position, discoverable")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { data: profileRow } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+  const profile = (profileRow ?? {
+    id: user.id,
+    display_name: user.user_metadata?.display_name ?? null,
+    county: null,
+    position: null,
+    role: "player",
+    date_of_birth: null,
+    discoverable: false,
+    guardian_consent: false,
+    consent_at: null,
+  }) as PlayerProfile;
 
   // Scouts have an application row (approved or not); the scout area handles it.
   const { count: scoutApps } = await supabase
@@ -127,139 +63,129 @@ async function DashboardContent() {
     .select("id", { count: "exact", head: true })
     .eq("applicant_id", user.id);
 
-  if (
-    profile?.role === "scout" ||
-    user.user_metadata?.role === "scout" ||
-    (scoutApps ?? 0) > 0
-  ) {
+  if (profile.role === "scout" || user.user_metadata?.role === "scout" || (scoutApps ?? 0) > 0) {
     redirect("/scout");
   }
+  // New players see the consent screen once before anything else.
+  if (!user.user_metadata?.onboarded) redirect("/welcome");
 
-  const [{ count: pendingRequests }, { count: views }] = await Promise.all([
+  // Board data: appearances → matches, stats and heatmaps; plus clubs.
+  const [{ data: apps }, { data: clubs }, { count: pendingRequests }, { count: views }] = await Promise.all([
+    supabase
+      .from("match_players")
+      .select("id, match_id, player_id, minutes_played")
+      .eq("player_id", user.id),
+    supabase
+      .from("player_club_history")
+      .select("id, club_name, league_or_division, start_date, end_date, is_current, achievement")
+      .eq("player_id", user.id)
+      .order("start_date", { ascending: false }),
     supabase
       .from("contact_requests")
       .select("id", { count: "exact", head: true })
       .eq("player_id", user.id)
       .eq("status", "pending"),
-
-    supabase
-      .from("profile_views")
-      .select("id", { count: "exact", head: true })
-      .eq("player_id", user.id),
+    supabase.from("profile_views").select("id", { count: "exact", head: true }).eq("player_id", user.id),
   ]);
 
-  const missing = [
-    profile?.display_name,
-    profile?.county,
-    profile?.position,
-  ].filter((v) => !v).length;
+  const appearances = (apps || []) as MatchPlayer[];
+  const matchIds = [...new Set(appearances.map((a) => a.match_id))];
+  const appIds = appearances.map((a) => a.id);
+
+  const [{ data: matchRows }, { data: statRows }, { data: heatRows }] = await Promise.all([
+    matchIds.length
+      ? supabase
+          .from("matches")
+          .select("id, club_name, opponent, competition, match_date, team_goals, opponent_goals")
+          .in("id", matchIds)
+      : Promise.resolve({ data: [] }),
+    appIds.length
+      ? supabase.from("performance_stats").select("*").in("match_player_id", appIds)
+      : Promise.resolve({ data: [] }),
+    appIds.length
+      ? supabase.from("player_heatmaps").select("*").in("match_player_id", appIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const matchById = new Map(((matchRows || []) as Match[]).map((m) => [m.id, m]));
+  const statByApp = new Map(((statRows || []) as PerformanceStat[]).map((s) => [s.match_player_id, s]));
+  const board: BoardAppearance[] = appearances.map((a) => ({
+    ...a,
+    match: matchById.get(a.match_id) ?? null,
+    stat: statByApp.get(a.id) ?? null,
+  }));
+
+  const firstName = (profile.display_name || "Player").split(" ")[0];
+  const pending = pendingRequests ?? 0;
+
+  const alerts = (
+    <section className="mt-4 grid gap-3 sm:grid-cols-3" aria-label="Scout interest">
+      <Link
+        href="/dashboard/profile"
+        className={`rounded-xl border p-4 transition hover:border-[#F47721] ${
+          profile.discoverable ? "border-[#353941] bg-[#1D2025]" : "border-[#F47721]/50 bg-[#F47721]/10"
+        }`}
+      >
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[#AEB5C0]">Visibility</p>
+        <p className={`mt-1 font-bold ${profile.discoverable ? "text-green-300" : "text-[#F47721]"}`}>
+          {profile.discoverable ? "Visible to scouts" : "Hidden from scouts"}
+        </p>
+        <p className="mt-0.5 text-xs text-[#AEB5C0]">
+          {profile.discoverable ? "Change in your profile" : "Turn on visibility to be discovered →"}
+        </p>
+      </Link>
+      <div className="rounded-xl border border-[#353941] bg-[#1D2025] p-4">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[#AEB5C0]">Scout views</p>
+        <p className="mt-1 text-2xl font-black">{views ?? 0}</p>
+        <p className="text-xs text-[#AEB5C0]">times scouts opened your profile</p>
+      </div>
+      <Link
+        href="/dashboard/requests"
+        className={`rounded-xl border p-4 transition hover:border-[#F47721] ${
+          pending > 0 ? "border-[#F47721]/50 bg-[#F47721]/10" : "border-[#353941] bg-[#1D2025]"
+        }`}
+      >
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[#AEB5C0]">Scout requests</p>
+        <p className="mt-1 text-2xl font-black">{pending}</p>
+        <p className="text-xs text-[#AEB5C0]">{pending > 0 ? "waiting for your reply →" : "no new requests"}</p>
+      </Link>
+    </section>
+  );
 
   return (
-    <>
-      <section className="relative overflow-hidden rounded-2xl border border-[#353941] bg-[#22252B] p-8 md:p-12">
-        <div className="absolute -right-10 -top-10 h-64 w-64 rounded-full border-[30px] border-[#F47721]/5" />
-
-        <div className="relative z-10">
-          <p className="text-sm font-bold uppercase tracking-[0.25em] text-[#F47721]">
-            Player dashboard
-          </p>
-
-          <h1 className="mt-4 text-4xl font-black md:text-5xl">
-            Welcome back,
-            <br />
-            <span className="text-[#F47721]">
-              {profile?.display_name || "Player"}.
-            </span>
-          </h1>
-
-          <p className="mt-5 max-w-xl leading-7 text-[#AEB5C0]">
-            Your talent deserves to be seen. Build your football identity,
-            document your journey and put your performance in front of the
-            people looking for the next generation of champions.
-          </p>
-
-          {profile && !profile.discoverable ? (
-            <p className="mt-6 rounded-lg border border-[#F47721]/40 bg-[#F47721]/10 p-4 text-sm">
-              <strong className="text-[#F47721]">
-                Scouts can&apos;t see you yet.
-              </strong>{" "}
-              Turn on visibility in your profile when you&apos;re ready to be
-              discovered.
-            </p>
-          ) : (
-            !!views && (
-              <p className="mt-6 text-sm text-[#AEB5C0]">
-                Your profile has been viewed{" "}
-                <strong className="text-white">{views}</strong> time
-                {views === 1 ? "" : "s"} by verified scouts.
-              </p>
-            )
-          )}
-
-          <div className="mt-8 flex flex-wrap gap-3">
-            {(missing > 0 || !profile?.discoverable) && (
-              <Link
-                href="/dashboard/profile"
-                className="inline-flex rounded-lg bg-[#F47721] px-6 py-3 font-bold text-white transition hover:bg-[#DB6418]"
-              >
-                Complete my profile →
-              </Link>
-            )}
-
-            {!!pendingRequests && pendingRequests > 0 && (
-              <Link
-                href="/dashboard/requests"
-                className="inline-flex rounded-lg border border-[#F47721] px-6 py-3 font-bold text-[#F47721] transition hover:bg-[#F47721]/10"
-              >
-                {pendingRequests} new scout request
-                {pendingRequests === 1 ? "" : "s"} →
-              </Link>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-10">
-        <div className="mb-5 flex items-center justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#F47721]">
-              Your information
-            </p>
-            <h2 className="mt-2 text-2xl font-bold">Player overview</h2>
-          </div>
-
+    <PlayerBoard
+      profile={profile}
+      clubs={(clubs || []) as Club[]}
+      appearances={board}
+      heatmaps={(heatRows || []) as HeatmapRow[]}
+      breadcrumb={
+        <>
+          Player dashboard / <span className="font-semibold text-white">Welcome back, {firstName}</span>
+        </>
+      }
+      action={
+        <>
+          <Link
+            href="/dashboard/matches"
+            className="rounded-lg bg-[#F47721] px-5 py-2.5 text-center text-sm font-bold text-white transition hover:bg-[#DB6418]"
+          >
+            + Log a match
+          </Link>
+          <Link
+            href="/dashboard/videos"
+            className="rounded-lg border border-[#454A54] px-5 py-2.5 text-center text-sm font-semibold transition hover:border-[#F47721] hover:text-[#F47721]"
+          >
+            Upload video
+          </Link>
           <Link
             href="/dashboard/profile"
-            className="text-sm font-semibold text-[#F47721] hover:underline"
+            className="text-center text-xs text-[#AEB5C0] transition hover:text-[#F47721]"
           >
-            Edit profile →
+            Edit profile
           </Link>
-        </div>
-
-        {profileError || !profile ? (
-          <div className="rounded-xl border border-red-500/30 bg-[#22252B] p-6">
-            We couldn&apos;t retrieve your profile. Please try again.
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {[
-              { label: "Full name", value: profile.display_name },
-              { label: "County", value: profile.county },
-              { label: "Playing position", value: profile.position },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className="rounded-xl border border-[#353941] bg-[#22252B] p-6"
-              >
-                <p className="text-sm text-[#AEB5C0]">{item.label}</p>
-                <h3 className="mt-3 text-xl font-bold">
-                  {item.value || "Not provided"}
-                </h3>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-    </>
+        </>
+      }
+      aside={alerts}
+    />
   );
 }
