@@ -1,4 +1,6 @@
 
+import Link from "next/link";
+
 const steps = [
   {
     number: "01",
@@ -73,8 +75,14 @@ function ArrowIcon() {
 
 function UserIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
-      stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      className="h-7 w-7"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      aria-hidden="true"
+    >
       <circle cx="12" cy="8" r="4" />
       <path d="M4 21a8 8 0 0 1 16 0" />
     </svg>
@@ -83,8 +91,14 @@ function UserIcon() {
 
 function ScoutIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="h-7 w-7" fill="none"
-      stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      className="h-7 w-7"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      aria-hidden="true"
+    >
       <circle cx="10.5" cy="10.5" r="6.5" />
       <path d="m16 16 5 5M8 10.5h5M10.5 8v5" strokeLinecap="round" />
     </svg>
@@ -270,7 +284,7 @@ function IntelligencePreview() {
           </div>
 
           <p className="mt-5 border-t border-white/10 pt-4 text-xs leading-5 text-[#AEB5C0]">
-            This is a design illustration, not a real player's analysed
+            This is a design illustration, not a real player&apos;s analysed
             performance or a validated scouting score.
           </p>
         </div>
@@ -285,12 +299,12 @@ export default function Home() {
       {/* Navigation */}
       <header className="absolute left-0 top-0 z-20 w-full border-b border-white/10">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-10">
-          <a href="/" className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3">
             <SearchLens size={42} />
             <span className="text-lg font-black tracking-[0.12em] text-white">
               PATA <span className="text-[#F47721]">TALANTA</span>
             </span>
-          </a>
+          </Link>
 
           <div className="hidden items-center gap-8 text-sm font-medium text-white/75 md:flex">
             <a href="#home" className="transition hover:text-[#F47721]">Home</a>
@@ -507,12 +521,12 @@ export default function Home() {
       {/* Footer */}
       <footer className="bg-[#17191D] px-6 py-10 text-white lg:px-10">
         <div className="mx-auto flex max-w-7xl flex-col justify-between gap-6 border-b border-white/10 pb-8 sm:flex-row sm:items-center">
-          <a href="/" className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3">
             <SearchLens size={36} />
             <span className="font-black tracking-[0.12em]">
               PATA <span className="text-[#F47721]">TALANTA</span>
             </span>
-          </a>
+          </Link>
           <p className="text-sm text-[#AEB5C0]">
             Look closer. Discover talent.
           </p>

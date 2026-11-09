@@ -1,7 +1,8 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 
 type Club = {
@@ -16,7 +17,8 @@ type Club = {
 };
 
 export default function ClubsPage() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
 
   const [clubs, setClubs] = useState<Club[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,37 +34,77 @@ export default function ClubsPage() {
   const [achievement, setAchievement] = useState("");
   const [notes, setNotes] = useState("");
 
-  async function loadClubs() {
-    setLoading(true);
-    setError("");
+  // Load club history when the page first opens.
+  useEffect(() => {
+    let cancelled = false;
 
+    async function fetchClubs() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (cancelled) return;
+
+        if (!user) {
+          router.push("/login");
+          return;
+        }
+
+        const { data, error: fetchError } = await supabase
+          .from("player_club_history")
+          .select("*")
+          .eq("player_id", user.id)
+          .order("start_date", { ascending: false });
+
+        if (cancelled) return;
+
+        if (fetchError) {
+          setError(fetchError.message);
+        } else {
+          setClubs(data || []);
+        }
+      } catch {
+        if (!cancelled) {
+          setError("Unable to load your club history. Please try again.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void fetchClubs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router, supabase]);
+
+  // Refresh club history after a successful submission.
+  async function loadClubs() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (!user) {
-      window.location.href = "/login";
+      router.push("/login");
       return;
     }
 
-    const { data, error } = await supabase
+    const { data, error: fetchError } = await supabase
       .from("player_club_history")
       .select("*")
       .eq("player_id", user.id)
       .order("start_date", { ascending: false });
 
-    if (error) {
-      setError(error.message);
+    if (fetchError) {
+      setError(fetchError.message);
     } else {
       setClubs(data || []);
     }
-
-    setLoading(false);
   }
-
-  useEffect(() => {
-    loadClubs();
-  }, []);
 
   async function addClub(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -71,31 +113,34 @@ export default function ClubsPage() {
     setError("");
     setMessage("");
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-    if (!user) {
-      window.location.href = "/login";
-      return;
-    }
+      if (!user) {
+        router.push("/login");
+        return;
+      }
 
-    const { error } = await supabase
-      .from("player_club_history")
-      .insert({
-        player_id: user.id,
-        club_name: clubName.trim(),
-        league_or_division: league.trim() || null,
-        start_date: startDate || null,
-        end_date: isCurrent ? null : endDate || null,
-        is_current: isCurrent,
-        achievement: achievement.trim() || null,
-        notes: notes.trim() || null,
-      });
+      const { error: insertError } = await supabase
+        .from("player_club_history")
+        .insert({
+          player_id: user.id,
+          club_name: clubName.trim(),
+          league_or_division: league.trim() || null,
+          start_date: startDate || null,
+          end_date: isCurrent ? null : endDate || null,
+          is_current: isCurrent,
+          achievement: achievement.trim() || null,
+          notes: notes.trim() || null,
+        });
 
-    if (error) {
-      setError(error.message);
-    } else {
+      if (insertError) {
+        setError(insertError.message);
+        return;
+      }
+
       setMessage("Club history added successfully.");
 
       setClubName("");
@@ -107,9 +152,11 @@ export default function ClubsPage() {
       setNotes("");
 
       await loadClubs();
+    } catch {
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setSaving(false);
     }
-
-    setSaving(false);
   }
 
   return (
@@ -265,11 +312,13 @@ export default function ClubsPage() {
                         </p>
                       </div>
 
-                      <span className={`rounded-full px-3 py-1 text-xs font-bold ${
-                        club.is_current
-                          ? "bg-[#F47721]/15 text-[#F47721]"
-                          : "bg-[#454A54] text-[#D1D5DB]"
-                      }`}>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${
+                          club.is_current
+                            ? "bg-[#F47721]/15 text-[#F47721]"
+                            : "bg-[#454A54] text-[#D1D5DB]"
+                        }`}
+                      >
                         {club.is_current ? "CURRENT CLUB" : "FORMER CLUB"}
                       </span>
                     </div>

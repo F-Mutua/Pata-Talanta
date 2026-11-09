@@ -51,6 +51,7 @@ export default function LoginPage() {
           >
             PATA <span className="text-[#F47721]">TALANTA</span>
           </Link>
+
           <Link
             href="/"
             className="text-sm text-[#AEB5C0] transition hover:text-[#F47721]"
@@ -124,7 +125,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-6 text-center text-sm text-[#AEB5C0]">
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link
               href="/signup"
               className="font-semibold text-[#F47721] hover:underline"

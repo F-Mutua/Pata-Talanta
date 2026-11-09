@@ -9,8 +9,14 @@ ENV_FILE = BASE_DIR / ".env"
 # Load environment variables
 load_dotenv(dotenv_path=ENV_FILE, override=False)
 
+# Supabase configuration
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_PUBLISHABLE_KEY = os.getenv("SUPABASE_PUBLISHABLE_KEY")
+
+# Privileged key: backend use only
+SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY")
+
+# Database connection
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
@@ -29,4 +35,14 @@ def validate_config():
     if missing:
         raise RuntimeError(
             f"Missing or incomplete environment variables: {', '.join(missing)}"
+        )
+
+
+def validate_admin_config():
+    if (
+        not SUPABASE_SECRET_KEY
+        or SUPABASE_SECRET_KEY.startswith("YOUR_")
+    ):
+        raise RuntimeError(
+            "Missing or incomplete environment variable: SUPABASE_SECRET_KEY"
         )
